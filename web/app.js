@@ -276,7 +276,8 @@ function render() {
     : v === 'preview' ? previewView() : v === 'importing' ? busyView('Bringing it in…', 'Saving your chats and what you approved.')
     : v === 'done' ? doneView() : errorView();
   screen.dataset.view = v;
-  screen.replaceChildren(...[].concat(body).filter(Boolean));
+  const lead = (v === 'preview' || v === 'error') ? [backRow()] : [];
+  screen.replaceChildren(...lead.concat(body).filter(Boolean));
   if (v === 'guide') renderUploads();
 }
 function banner() {
@@ -343,32 +344,34 @@ function renderUploads() {
     h('small', { text: u.error || (u.path ? 'In Files › Inbox' : `Uploading… ${u.pct}%`) })),
     h('span', { class: 'wz-meter imp-meter' }, h('i', { style: `width:${u.error ? 0 : u.path ? 100 : u.pct}%` })))));
 }
+function backRow() {
+  return h('div', { class: 'imp-backrow' }, h('button', { class: 'wz-button secondary imp-back', type: 'button', 'data-back': '1', 'aria-label': 'Back to all sources', onclick: () => back(), text: '‹ All sources' }));
+}
 function guideView() {
   const g = G[S.source] || G.other;
-  const out = [h('div', { class: 'imp-guide-head' }, mark(g), h('h2', { text: g.name })), h('p', { class: 'imp-lead', text: g.intro }), banner()];
+  const out = [backRow(), h('div', { class: 'imp-guide-head' }, mark(g), h('h2', { text: g.name })), h('p', { class: 'imp-lead', text: g.intro }), banner()];
   const rows = readyRows(S.source === 'other' ? '' : S.source);
   if (rows.length) out.push(h('ul', { class: 'wz-list imp-ready' }, rows));
   if (S.links) {
     out.push(h('div', { class: 'wz-card' }, h('b', { text: 'Claude sent a list of download links' }),
-      h('p', { class: 'imp-muted', text: 'Open each link once (each works one time), then drop all the zips that download here together.' }),
+      h('p', { class: 'imp-muted', text: 'Open each link once, then drop all the zips here together.' }),
       h('div', { class: 'wz-actions' }, S.links.links.map(l => ext(l.url, 'Download ' + l.part, 'wz-button secondary'))), ...dropZone()));
     return out;
   }
+  const more = [g.phone, ...g.expect, ...g.notes].filter(Boolean);
   out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: rows.length && g.command ? 'Or from another computer' : 'Get your export' }),
     h('ol', { class: 'imp-steps' }, g.steps.map(s => h('li', { text: s }))),
+    g.link ? h('div', { class: 'wz-actions' }, ext(g.link.url, g.link.label, 'wz-button imp-open')) : null,
     g.command ? h('div', { class: 'imp-command' }, h('code', { text: g.command }), h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: async () => {
       try { await navigator.clipboard.writeText(g.command); say('Copied.', true); } catch (e) { say('Select the line and copy it.', true); } }, text: 'Copy' })) : null,
     g.after ? h('p', { class: 'imp-muted', text: g.after }) : null,
-    g.phone ? h('p', { class: 'imp-muted', text: g.phone }) : null,
-    g.link ? h('div', { class: 'wz-actions' }, ext(g.link.url, g.link.label, 'wz-button imp-open')) : null));
-  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'What to expect' }), h('ul', { class: 'imp-expect' }, g.expect.map(x => h('li', { text: x }))),
-    g.notes.length ? h('details', { class: 'wz-more' }, h('summary', { text: 'Work accounts and other cases' }), h('ul', { class: 'imp-expect' }, g.notes.map(x => h('li', { text: x }))),
-      g.portal ? ext(g.portal.url, g.portal.label) : null) : null,
-    g.help ? h('p', { class: 'imp-muted' }, ext(g.help, g.helpName || `${g.name} help page for these steps`)) : null));
+    g.next ? h('p', { class: 'imp-next', text: g.next }) : null,
+    more.length || g.help ? h('details', { class: 'wz-more' }, h('summary', { text: 'More help' }), h('ul', { class: 'imp-expect' }, more.map(x => h('li', { text: x }))),
+      g.portal ? ext(g.portal.url, g.portal.label) : null, g.help ? h('p', { class: 'imp-muted' }, ext(g.help, g.helpName || `${g.name} help page`)) : null) : null));
   const waits = !!g.mail;
-  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: waits ? 'When the file is ready' : 'Bring it in' }),
+  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'Bring it in' }),
     waits ? h('div', { class: 'imp-wait' }, h('span', { class: 'imp-spin', 'aria-hidden': 'true' }),
-      h('span', { text: 'Waiting for it. The Importer notices when it lands in Files › Inbox and carries on by itself, even if you close this and come back later.' })) : null,
+      h('span', { text: 'Watching Files › Inbox. It carries on by itself when the file lands.' })) : null,
     mailCard(), ...dropZone(), S.source === 'other' ? filesPath() : null));
   return out;
 }

@@ -57,3 +57,6 @@ html[data-embedded="1"] .wz-head { display: none; }
 /* One-colour brand marks (ChatGPT, Hermes) are drawn dark: show them light on dark skins. */
 html[data-color-scheme="dark"] .imp-mark.mono img { filter: invert(1); }
 .wz-sec > .wz-actions { padding-left: 8px; }
+.imp-backrow { margin: 4px 8px 2px; }
+.imp-back { min-height: 36px; padding: 4px 12px; font-size: var(--wz-text-sm); }
+.imp-next { margin: 4px 8px 8px; color: var(--ink); font-size: var(--wz-text-md); line-height: 1.45; }
