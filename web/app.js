@@ -272,12 +272,17 @@ function confirmUndo(entry) {
 function render() {
   const v = S.view;
   const body = v === 'home' ? homeView() : v === 'guide' ? guideView()
-    : v === 'scanning' ? busyView('Reading your export…', 'Nothing is saved yet. A long history can take a minute.')
-    : v === 'preview' ? previewView() : v === 'importing' ? busyView('Bringing it in…', 'Saving your chats and what you approved.')
+    : v === 'scanning' ? busyView('Reading your export…', 'Nothing is saved yet.')
+    : v === 'preview' ? previewView() : v === 'importing' ? busyView('Bringing it in…', 'This takes a moment.')
     : v === 'done' ? doneView() : errorView();
   screen.dataset.view = v;
-  const lead = (v === 'preview' || v === 'error') ? [backRow()] : [];
-  screen.replaceChildren(...lead.concat(body).filter(Boolean));
+  const step = { home: 1, guide: 2, scanning: 2, preview: 3, importing: 3, done: 4 }[v] || 0;
+  const canBack = ['guide', 'preview', 'error'].includes(v);
+  const top = h('div', { class: 'imp-top' },
+    canBack ? h('button', { class: 'imp-back', type: 'button', 'data-back': '1', 'aria-label': 'Back', onclick: () => back() }, svg('M15 5l-7 7 7 7')) : h('span', { class: 'imp-back-sp' }),
+    step ? h('div', { class: 'imp-dots', 'aria-label': `Step ${step} of 4` }, [1, 2, 3, 4].map(i => h('i', { class: i === step ? 'on' : i < step ? 'past' : '' }))) : h('span'),
+    h('span', { class: 'imp-back-sp' }));
+  screen.replaceChildren(h('div', { class: 'imp-stage' }, top, ...[].concat(body).filter(Boolean)));
   if (v === 'guide') renderUploads();
 }
 function banner() {
@@ -290,53 +295,40 @@ function banner() {
 function readyRows(filterKind) {
   const local = (S.sources?.local || []).filter(s => !filterKind || s.kind === filterKind);
   const files = (S.sources?.files || []).filter(f => f.kind && (!filterKind || f.kind === filterKind || (filterKind === 'claude' && f.kind === 'claude-links')));
-  const rows = local.map(s => h('li', {}, h('button', { class: 'wz-row', type: 'button', 'data-local': s.kind, onclick: () => startScan({ path: s.path }, s.kind) },
-    mark(G[s.kind]), h('span', { class: 'wz-main' }, h('b', { text: s.label }), h('small', { text: 'On this Wizard. One tap, no export needed.' })), h('span', { class: 'wz-chip', text: 'Look inside' }))));
-  for (const f of files) {
-    const g = G[f.kind === 'claude-links' ? 'claude' : f.kind] || G.other;
-    rows.push(h('li', {}, h('button', { class: 'wz-row', type: 'button', onclick: () => {
-      if (f.kind === 'claude-links') { S.source = 'claude'; S.links = f; go('guide'); poll(); } else startScan({ path: f.path }, f.kind);
-    } }, mark(g), h('span', { class: 'wz-main' }, h('b', { text: f.name }), h('small', { text: `${KIND_NAME[f.kind] || 'Export'} · Files › ${f.path.split('/')[0]} · ${bytes(f.size)}` })),
-    h('span', { class: 'wz-chip', text: f.kind === 'claude-links' ? 'Get the files' : 'Use this' }))));
-  }
-  return rows;
+  const row = (g, title, sub, on, attrs) => h('button', { class: 'imp-src', type: 'button', onclick: on, ...attrs }, mark(g),
+    h('span', { class: 'imp-src-t' }, h('b', { text: title }), sub ? h('small', { text: sub }) : null), h('span', { class: 'imp-chev', 'aria-hidden': 'true' }, svg('M9 5l7 7-7 7')));
+  return [
+    ...local.map(s => row(G[s.kind] || G.other, s.label || KIND_NAME[s.kind], 'On this Wizard · no export needed', () => startScan({ path: s.path }, s.kind), { 'data-local': s.kind })),
+    ...files.map(f => row(G[f.kind === 'claude-links' ? 'claude' : f.kind] || G.other, f.name, `In your Files · ${bytes(f.size || 0)}`, () => startScan({ path: f.path }, f.kind), { 'data-file': f.path })),
+  ];
 }
 function homeView() {
-  const out = [h('p', { class: 'imp-lead', text: 'Move your memories, chats, skills and personality into this Wizard. Nothing is saved until you approve it.' }), banner()];
+  const out = [h('h1', { class: 'imp-h1', text: 'Bring your AI' }),
+    h('p', { class: 'imp-sub', text: 'Where have you been using AI?' }), banner()];
+  if (S.waiting && G[S.waiting.source]) out.push(h('button', { class: 'imp-pending', type: 'button', onclick: () => openGuide(S.waiting.source) },
+    h('span', { class: 'imp-spin', 'aria-hidden': 'true' }), h('span', { text: `Waiting for your ${G[S.waiting.source].name} file` }), h('b', { text: 'Open' })));
   const rows = readyRows();
-  if (rows.length) out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'Ready to bring in' }), h('ul', { class: 'wz-list' }, rows)));
-  if (S.waiting && G[S.waiting.source]) {
-    out.push(h('div', { class: 'wz-card imp-waiting' }, h('b', { text: `Waiting for your ${G[S.waiting.source].name} export` }),
-      h('p', { class: 'imp-muted', text: 'It carries on by itself when the file lands in Files › Inbox.' }),
-      h('div', { class: 'wz-actions' }, h('button', { class: 'wz-button secondary', type: 'button', onclick: () => openGuide(S.waiting.source), text: 'Open the steps' }),
-        h('button', { class: 'wz-button secondary', type: 'button', onclick: () => { S.waiting = null; saveWaiting(); render(); }, text: 'Stop waiting' }))));
-  }
-  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'Where is your AI now?' }),
-    h('div', { class: 'wz-grid imp-tiles' }, ['chatgpt', 'claude', 'claude-code', 'hermes', 'other'].map(id => {
-      const g = G[id];
-      return h('button', { class: 'wz-card imp-tile', type: 'button', 'data-source': id, onclick: () => openGuide(id) }, mark(g), h('span', { class: 'imp-tile-t' }, h('b', { text: g.name }), h('small', { text: g.tile })));
-    }))));
+  const tiles = ['chatgpt', 'claude', 'claude-code', 'hermes'].filter(id => !(S.sources?.local || []).some(s => s.kind === id))
+    .map(id => h('button', { class: 'imp-src', type: 'button', 'data-source': id, onclick: () => openGuide(id) }, mark(G[id]),
+      h('span', { class: 'imp-src-t' }, h('b', { text: G[id].name })), h('span', { class: 'imp-chev', 'aria-hidden': 'true' }, svg('M9 5l7 7-7 7'))));
+  out.push(h('div', { class: 'imp-list' }, ...rows, ...tiles));
+  out.push(h('button', { class: 'imp-link', type: 'button', 'data-source': 'other', onclick: () => openGuide('other'), text: 'Something else' }));
+  out.push(h('p', { class: 'imp-fine', text: 'Nothing is saved until you approve it.' }));
   const past = S.imports.filter(i => i.archived_at || i.imported_at);
-  if (past.length) {
-    out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'Brought in' }), h('ul', { class: 'wz-list' }, past.map(i => h('li', {}, h('div', { class: 'wz-row' },
-      mark(G[i.kind] || G.other), h('span', { class: 'wz-main' }, h('b', { text: i.label || KIND_NAME[i.kind] || 'Import' }),
-        h('small', { text: [i.archived_chats ? plural(i.archived_chats, 'chat') : '', i.skills_installed ? plural(i.skills_installed, 'skill') : '',
-          i.memories_added ? plural(i.memories_added, 'memory', 'memories') : '', i.personality ? 'personality' : '',
-          new Date(1000 * (i.imported_at || i.archived_at)).toLocaleDateString()].filter(Boolean).join(' · ') })),
-      h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: () => confirmUndo(i), text: 'Undo' })))))));
-  }
+  if (past.length) out.push(h('button', { class: 'imp-link imp-past', type: 'button', onclick: pastSheet, text: `Already brought in (${past.length})` }));
   return out;
 }
+function pastSheet() {
+  const past = S.imports.filter(i => i.archived_at || i.imported_at);
+  openSheet(() => [h('h2', { id: 'sheet-h', text: 'Brought in' }), h('ul', { class: 'wz-list' }, past.map(i => h('li', {}, h('div', { class: 'wz-row' },
+    mark(G[i.kind] || G.other), h('span', { class: 'wz-main' }, h('b', { text: i.label || KIND_NAME[i.kind] || 'Import' }),
+      h('small', { text: [i.archived_chats ? plural(i.archived_chats, 'chat') : '', i.skills_installed ? plural(i.skills_installed, 'skill') : '',
+        i.memories_added ? plural(i.memories_added, 'memory', 'memories') : '', new Date(1000 * (i.imported_at || i.archived_at)).toLocaleDateString()].filter(Boolean).join(' · ') })),
+    h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: () => { closeSheet(); confirmUndo(i); }, text: 'Undo' })))))]);
+}
 function dropZone() {
-  const g = G[S.source] || G.other;
-  const zone = h('div', { class: 'imp-drop', tabindex: '0', role: 'button', 'aria-label': `Drop ${g.file} here or choose it` },
-    h('b', { text: `Drop ${g.file} here` }), h('small', { text: 'or' }),
-    h('button', { class: 'wz-button', type: 'button', onclick: e => { e.stopPropagation(); $('file').click(); }, text: 'Choose the file' }));
-  zone.addEventListener('keydown', e => { if (e.target === zone && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); $('file').click(); } });
-  for (const ev of ['dragenter', 'dragover']) zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('over'); });
-  for (const ev of ['dragleave', 'drop']) zone.addEventListener(ev, () => zone.classList.remove('over'));
-  zone.addEventListener('drop', e => { e.preventDefault(); addFiles(e.dataTransfer.files); });
-  return [zone, h('ul', { class: 'wz-list', id: 'uploads' })];
+  // The whole screen accepts a dropped file; this is the tap way in.
+  return [h('button', { class: 'imp-link', type: 'button', 'data-choose': '1', onclick: () => $('file').click(), text: 'I already have the file' }), h('ul', { class: 'wz-list', id: 'uploads' })];
 }
 function renderUploads() {
   const ul = $('uploads'); if (!ul) return;
@@ -344,47 +336,37 @@ function renderUploads() {
     h('small', { text: u.error || (u.path ? 'In Files › Inbox' : `Uploading… ${u.pct}%`) })),
     h('span', { class: 'wz-meter imp-meter' }, h('i', { style: `width:${u.error ? 0 : u.path ? 100 : u.pct}%` })))));
 }
-function backRow() {
-  return h('div', { class: 'imp-backrow' }, h('button', { class: 'wz-button secondary imp-back', type: 'button', 'data-back': '1', 'aria-label': 'Back to all sources', onclick: () => back(), text: '‹ All sources' }));
-}
+function backRow() { return null; }
 function guideView() {
   const g = G[S.source] || G.other;
-  const out = [backRow(), h('div', { class: 'imp-guide-head' }, mark(g), h('h2', { text: g.name })), h('p', { class: 'imp-lead', text: g.intro }), banner()];
+  const out = [h('div', { class: 'imp-hero' }, mark(g)), h('h1', { class: 'imp-h1', text: S.source === 'other' ? 'Bring a file' : `From ${g.name}` }), banner()];
   const rows = readyRows(S.source === 'other' ? '' : S.source);
-  if (rows.length) out.push(h('ul', { class: 'wz-list imp-ready' }, rows));
   if (S.links) {
-    out.push(h('div', { class: 'wz-card' }, h('b', { text: 'Claude sent a list of download links' }),
-      h('p', { class: 'imp-muted', text: 'Open each link once, then drop all the zips here together.' }),
-      h('div', { class: 'wz-actions' }, S.links.links.map(l => ext(l.url, 'Download ' + l.part, 'wz-button secondary'))), ...dropZone()));
+    out.push(h('p', { class: 'imp-sub', text: 'Claude split your export. Open each link once, then add the files.' }),
+      h('div', { class: 'imp-stack' }, S.links.links.map(l => ext(l.url, 'Download ' + l.part, 'wz-button secondary imp-wide'))), ...dropZone());
     return out;
   }
-  const more = [g.phone, ...g.expect, ...g.notes].filter(Boolean);
-  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: rows.length && g.command ? 'Or from another computer' : 'Get your export' }),
-    h('ol', { class: 'imp-steps' }, g.steps.map(s => h('li', { text: s }))),
-    g.link ? h('div', { class: 'wz-actions' }, ext(g.link.url, g.link.label, 'wz-button imp-open')) : null,
-    g.command ? h('div', { class: 'imp-command' }, h('code', { text: g.command }), h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: async () => {
-      try { await navigator.clipboard.writeText(g.command); say('Copied.', true); } catch (e) { say('Select the line and copy it.', true); } }, text: 'Copy' })) : null,
-    g.after ? h('p', { class: 'imp-muted', text: g.after }) : null,
-    g.next ? h('p', { class: 'imp-next', text: g.next }) : null,
-    more.length || g.help ? h('details', { class: 'wz-more' }, h('summary', { text: 'More help' }), h('ul', { class: 'imp-expect' }, more.map(x => h('li', { text: x }))),
-      g.portal ? ext(g.portal.url, g.portal.label) : null, g.help ? h('p', { class: 'imp-muted' }, ext(g.help, g.helpName || `${g.name} help page`)) : null) : null));
-  const waits = !!g.mail;
-  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'Bring it in' }),
-    waits ? h('div', { class: 'imp-wait' }, h('span', { class: 'imp-spin', 'aria-hidden': 'true' }),
-      h('span', { text: 'Watching Files › Inbox. It carries on by itself when the file lands.' })) : null,
-    mailCard(), ...dropZone(), S.source === 'other' ? filesPath() : null));
+  if (rows.length) out.push(h('p', { class: 'imp-sub', text: 'Found on this Wizard. Tap to bring it in.' }), h('div', { class: 'imp-list' }, rows));
+  out.push(h('ol', { class: 'imp-num' }, g.steps.map(s => h('li', { text: s }))));
+  if (g.command) out.push(h('div', { class: 'imp-command' }, h('code', { text: g.command }), h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: async () => {
+    try { await navigator.clipboard.writeText(g.command); say('Copied.', true); } catch (e) { say('Select the line and copy it.', true); } }, text: 'Copy' })));
+  if (g.link) out.push(ext(g.link.url, g.link.label, 'wz-button imp-primary imp-open'));
+  const mail = mailCard();
+  if (g.mail) out.push(mail || h('div', { class: 'imp-waitline' }, h('span', { class: 'imp-spin', 'aria-hidden': 'true' }), h('span', { text: g.next || 'Waiting for your file. We’ll continue when it arrives.' })));
+  else if (S.source === 'other') out.push(filesPath());
+  out.push(...dropZone());
+  const more = [g.after, g.phone, ...g.expect, ...g.notes].filter(Boolean);
+  if (more.length || g.help) out.push(h('details', { class: 'imp-help' }, h('summary', { text: 'Need help?' }), h('ul', { class: 'imp-expect' }, more.map(x => h('li', { text: x }))),
+    g.portal ? ext(g.portal.url, g.portal.label) : null, g.help ? h('p', { class: 'imp-muted' }, ext(g.help, g.helpName || `${g.name} help page`)) : null));
   return out;
 }
 function mailCard() {
   const g = G[S.source];
   if (!g || !g.mail || S.mail.state !== 'ready') return null;
   const found = S.mail.hits.filter(x => x.links.length);
-  if (found.length) return h('div', { class: 'wz-card imp-mail' }, h('span', { class: 'wz-pill ok', text: 'Email arrived' }), h('b', { text: found[0].subject }),
-    h('p', { class: 'imp-muted', text: `Open the link, sign in to ${g.name} if asked, and the download starts. Then drop the file below.` }),
-    h('div', { class: 'wz-actions' }, found[0].links.map((u, i) => ext(u, found[0].links.length > 1 ? `Open download link ${i + 1}` : 'Open the download link', 'wz-button'))));
-  return h('div', { class: 'wz-card imp-mail' }, h('b', { text: 'Watching your Mail for it' }),
-    h('p', { class: 'imp-muted', text: S.mail.looked ? `No ${g.name} export email yet. Checking again every minute.` : `Your Mail is connected, so the Importer can spot ${g.name}’s email and show you its link.` }),
-    h('button', { class: 'wz-button secondary', type: 'button', disabled: S.mail.busy || undefined, onclick: () => mailLook(false), text: S.mail.busy ? 'Looking…' : 'Look in Mail now' }));
+  if (found.length) return h('div', { class: 'imp-arrived' }, h('span', { class: 'wz-pill ok', text: 'Your email arrived' }),
+    ...found[0].links.map((u, i) => ext(u, found[0].links.length > 1 ? `Download part ${i + 1}` : 'Download it', 'wz-button imp-primary')));
+  return h('div', { class: 'imp-waitline' }, h('span', { class: 'imp-spin', 'aria-hidden': 'true' }), h('span', { text: `Watching your Mail for ${g.name}’s email…` }));
 }
 function filesPath() {
   const input = h('input', { class: 'wz-input', placeholder: 'In Files, e.g. Inbox/my-export.zip', 'aria-label': 'File or folder in Files' });
@@ -392,11 +374,11 @@ function filesPath() {
     input, h('button', { class: 'wz-button secondary', type: 'submit', text: 'Look inside' }));
 }
 function busyView(title, line) {
-  return h('div', { class: 'wz-empty imp-busy' }, h('span', { class: 'imp-spin big', 'aria-hidden': 'true' }), h('strong', { text: title }), h('p', { text: line }));
+  return h('div', { class: 'imp-center-col' }, h('span', { class: 'imp-spin big', 'aria-hidden': 'true' }), h('h1', { class: 'imp-h1', text: title }), h('p', { class: 'imp-sub', text: line }));
 }
 function errorView() {
-  return h('div', { class: 'wz-empty' }, h('div', { class: 'wz-tile', 'aria-hidden': 'true', text: '!' }), h('strong', { text: 'That didn’t work' }), h('p', { text: S.error }),
-    h('div', { class: 'wz-actions imp-center' }, h('button', { class: 'wz-button', type: 'button', onclick: () => back(), text: 'Back' })));
+  return h('div', { class: 'imp-center-col' }, h('div', { class: 'imp-badge warn', 'aria-hidden': 'true', text: '!' }), h('h1', { class: 'imp-h1', text: 'That didn’t work' }), h('p', { class: 'imp-sub', text: S.error }),
+    h('button', { class: 'wz-button imp-primary', type: 'button', onclick: () => back(), text: 'Try again' }));
 }
 function option(name, title, line, extra) {
   const c = S.choice;
@@ -408,33 +390,29 @@ function previewView() {
   const found = [n.chats && plural(n.chats, 'chat'), n.memories && plural(n.memories, 'memory', 'memories'), n.projects && plural(n.projects, 'project'),
     n.skills && plural(n.skills, 'skill'), n.custom_instructions && (sc.kind === 'chatgpt' ? 'custom instructions' : plural(n.custom_instructions, 'instruction file')),
     sc.personality && sc.personality.found && 'personality'].filter(Boolean);
-  const out = [h('div', { class: 'imp-guide-head' }, mark(G[sc.kind] || G.other), h('h2', { text: `Found in your ${sc.source}` })),
-    h('p', { class: 'imp-found', 'data-found': '', text: found.join(' · ') || 'Nothing to bring in.' }),
-    sc.date_range && sc.date_range.length ? h('p', { class: 'imp-muted', text: `${sc.date_range[0]} to ${sc.date_range[1]}` }) : null, banner()];
+  const out = [h('h1', { class: 'imp-h1', text: 'Here’s what we found' }),
+    h('p', { class: 'imp-sub', 'data-found': '', text: found.join(' · ') || 'Nothing to bring in.' }), banner()];
   const opts = [];
   if (n.chats || n.projects) opts.push(option('chats', `Chats${n.projects ? ' and projects' : ''}`,
-    `${[n.chats && plural(n.chats, 'chat'), n.projects && plural(n.projects, 'project')].filter(Boolean).join(' and ')} saved as files your Wizard can search (Files › Imported › ${sc.source}).`));
-  if ((sc.draft_facts || []).length) opts.push(option('about', 'What I know about you', 'You check it below first. Each line becomes something your Wizard remembers.'));
+    'Saved as files your Wizard can search.'));
+  if ((sc.draft_facts || []).length) opts.push(option('about', 'What I know about you', 'You check it first.'));
   if (sc.new_skill_count) opts.push(option('skills', 'Skills', `${c.allSkills ? 'All' : fmt(c.skillNames.size) + ' of'} ${plural(sc.new_skill_count, 'new skill')}${c.allSkills ? '' : ' chosen'}.${sc.skills_already_here ? ` ${fmt(sc.skills_already_here)} it already has are skipped.` : ''}`,
     h('button', { class: 'wz-button secondary imp-small imp-pick', type: 'button', onclick: pickSkills, text: 'Choose' })));
   if (sc.personality && sc.personality.found) opts.push(option('personality', 'Personality', sc.personality.here === 'custom'
-    ? 'Replaces this Wizard’s current personality (SOUL.md). The old one is kept, so Undo brings it back.' : `Your ${sc.source} agent’s personality (SOUL.md) becomes this Wizard’s.`));
-  out.push(h('section', { class: 'wz-sec' }, h('h2', { class: 'wz-sec-h', text: 'Bring in' }),
-    opts.length ? h('ul', { class: 'wz-list imp-options' }, opts) : h('p', { class: 'imp-muted', text: 'This export has nothing the Importer can bring in yet.' })));
+    ? 'Replaces the current one. Undo brings it back.' : `Your ${sc.source} agent’s way of talking.`));
+  out.push(opts.length ? h('ul', { class: 'wz-list imp-options' }, opts) : h('p', { class: 'imp-muted', text: 'This export has nothing the Importer can bring in yet.' }));
   if (c.about) {
     const lines = () => c.facts.split('\n').filter(x => x.trim()).length;
     const area = h('textarea', { class: 'imp-facts', rows: String(Math.min(14, Math.max(4, lines() + 1))), 'aria-label': 'What I know about you, one fact per line', spellcheck: 'true' });
     area.value = c.facts;
     area.addEventListener('input', () => { c.facts = area.value; fit(area); $('fact-count').textContent = plural(lines(), 'fact'); });
     requestAnimationFrame(() => fit(area));
-    out.push(h('section', { class: 'wz-sec' }, h('div', { class: 'wz-card imp-card' }, h('h2', { text: 'What I know about you' }),
-      h('p', { class: 'imp-muted', text: 'From your export, one fact per line. Fix, add or delete lines: only what is here when you approve is saved, as memories and as About me in your Files.' }),
+    out.push(h('div', { class: 'imp-card' }, h('div', {}, h('h2', { text: 'What I know about you' }),
+      h('p', { class: 'imp-muted', text: 'One fact per line. Edit freely: only what’s here is saved.' }),
       area, h('small', { class: 'imp-muted', id: 'fact-count', text: plural(lines(), 'fact') }))));
   }
   const ro = S.status && S.status.read_only;
-  out.push(h('div', { class: 'wz-actions imp-go' },
-    h('button', { class: 'wz-button', type: 'button', id: 'import', disabled: ro || !opts.length || undefined, onclick: runImport, text: ro ? 'Preview only: nothing is saved' : c.about ? 'Approve and bring in' : 'Bring in' }),
-    h('button', { class: 'wz-button secondary', type: 'button', onclick: () => back(), text: 'Not now' })));
+  out.push(h('button', { class: 'wz-button imp-primary', type: 'button', id: 'import', disabled: ro || !opts.length || undefined, onclick: runImport, text: ro ? 'Preview only: nothing is saved' : 'Bring it in' }));
   return out;
 }
 function pickSkills() {
@@ -459,19 +437,21 @@ function doneView() {
   if (d.skills) lines.push(`${plural(d.skills.installed.length, 'new skill')}${d.skills.installed.length ? ': ' + d.skills.installed.slice(0, 6).map(s => s.name).join(', ') + (d.skills.installed.length > 6 ? '…' : '') : ''}`);
   if (d.personality) lines.push('its personality, from your next chat');
   const errors = Object.entries(r.errors || {});
-  return [h('div', { class: 'wz-empty imp-done' }, h('div', { class: 'wz-tile', 'aria-hidden': 'true' }, svg('M5 12.5l4.5 4.5L19 7.5')), h('strong', { text: `Done: your Wizard now knows your ${sc.source || 'data'}` })),
+  return [h('div', { class: 'imp-center-col' }, h('div', { class: 'imp-badge ok', 'aria-hidden': 'true' }, svg('M5 12.5l4.5 4.5L19 7.5')), h('h1', { class: 'imp-h1', text: 'All set' }),
+      h('p', { class: 'imp-sub', text: `Your Wizard now knows your ${sc.source || 'history'}.` })),
     h('ul', { class: 'imp-expect imp-knows' }, lines.map(x => h('li', { text: x }))),
     errors.length ? h('div', { class: 'wz-card' }, h('span', { class: 'wz-pill warn', text: 'Not everything came in' }), h('ul', { class: 'imp-expect' }, errors.map(([k, v]) => h('li', { text: `${k}: ${v}` })))) : null,
-    h('div', { class: 'wz-actions imp-go imp-center' }, h('button', { class: 'wz-button', type: 'button', onclick: finish, text: 'Done' }),
-      h('button', { class: 'wz-button secondary', type: 'button', onclick: () => confirmUndo({ import_id: r.import_id, label: sc.source }), text: 'Undo this import' }))];
+    h('button', { class: 'wz-button imp-primary', type: 'button', onclick: finish, text: 'Done' }),
+    h('button', { class: 'imp-link', type: 'button', onclick: () => confirmUndo({ import_id: r.import_id, label: sc.source }), text: 'Undo' })];
 }
 
 /* ---------------- boot ---------------- */
 // Inside the Welcome card (Setup's Bring your AI step) the card already carries the title.
 if (new URLSearchParams(location.search).get('embedded') === '1') document.documentElement.dataset.embedded = '1';
+for (const ev of ['dragover', 'drop']) document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files.length) { if (S.view !== 'guide') { S.source = S.source || 'other'; go('guide'); } addFiles(e.dataTransfer.files); } });
 $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
 if (WA) {
-  WA.ready({ name: 'importer', version: '0.1.0' });
+  WA.ready({ name: 'importer', version: '0.1.3' });
   WA.back.register({ canGoBack: () => S.view !== 'home', back });
 } else say('Wizard system functions are unavailable. Open the Importer through Wizard.', true);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.view === 'guide') poll(); });
