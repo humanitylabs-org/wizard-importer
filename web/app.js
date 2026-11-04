@@ -457,7 +457,7 @@ if (new URLSearchParams(location.search).get('embedded') === '1') document.docum
 for (const ev of ['dragover', 'drop']) document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files.length) { if (S.view !== 'guide') { S.source = S.source || 'other'; go('guide'); } addFiles(e.dataTransfer.files); } });
 $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
 if (WA) {
-  WA.ready({ name: 'importer', version: '0.1.4' });
+  WA.ready({ name: 'importer', version: '0.1.5' });
   WA.back.register({ canGoBack: () => S.view !== 'home', back });
 } else say('Wizard system functions are unavailable. Open the Importer through Wizard.', true);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.view === 'guide') poll(); });
