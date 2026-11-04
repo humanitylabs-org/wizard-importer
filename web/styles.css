@@ -124,3 +124,13 @@ html[data-color-scheme="dark"] .imp-mark.mono img { filter: invert(1); }
 .imp-fact-x { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-3); }
 .imp-fact-x svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 @media (hover: hover) { .imp-fact-x:hover { background: var(--fill); color: var(--ink); } }
+
+/* Bring into: which agent the import goes to (only when the box has more than one) */
+.imp-into .imp-src-t small { order: -1; }
+.imp-blocked { flex-direction: column; align-items: flex-start; gap: var(--wz-space-2); }
+.imp-failed .imp-expect { margin: 0; }
+.imp-pending-row { display: flex; gap: var(--wz-space-2); align-items: stretch; }
+.imp-pending-row .imp-pending { flex: 1; min-width: 0; }
+.imp-pending-x { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px; border-radius: var(--r); color: var(--ink-2); background: var(--fill); font-size: var(--wz-text-sm); }
+.imp-pending-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.imp-src[data-done] .imp-src-t small { color: var(--ink-3); }

@@ -122,6 +122,18 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(body['echo'], {'path': 'Inbox/x.zip'})
         self.assertEqual(FakeDashboard.calls[-1][:3], ('POST', '/api/plugins/wizard-os/bring-data/scan', '1'))
 
+    def test_dest_is_an_agent_id_relayed_to_the_engine(self):
+        code, body = self.req('POST', '/api/scan', {'path': 'x', 'dest': 'oscar-os'})
+        self.assertEqual((code, body['echo']), (200, {'path': 'x', 'dest': 'oscar-os'}))
+        for bad in ('../x', '/home', 'Oscar', 3):
+            self.assertEqual(self.req('POST', '/api/scan', {'path': 'x', 'dest': bad})[0], 400, bad)
+            self.assertEqual(self.req('POST', '/api/undo', {'import_id': 'a', 'dest': bad})[0], 400, bad)
+        self.assertEqual(self.req('GET', '/api/imports?dest=oscar-os')[0], 200)
+        self.assertEqual(FakeDashboard.calls[-1][1], '/api/plugins/wizard-os/bring-data/imports?dest=oscar-os')
+        self.assertEqual(self.req('GET', '/api/imports?dest=..%2Fx')[0], 400)
+        self.req('POST', '/api/import', {'import_id': 'a', 'facts': True, 'dest': 'oscar-os', 'evil': 1})
+        self.assertEqual(json.loads(FakeDashboard.calls[-1][3]), {'import_id': 'a', 'facts': True, 'dest': 'oscar-os'})
+
     def test_engine_refusal_text_reaches_the_screen(self):
         code, body = self.req('POST', '/api/import', {'import_id': 'nope', 'chats': True})
         self.assertEqual((code, body['error']), (409, 'Scan the export first.'))

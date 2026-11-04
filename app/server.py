@@ -9,6 +9,7 @@ Stdlib only. The Wizard gateway owns owner authentication; direct ports stay loo
 """
 import http.cookiejar
 import json
+import re
 import os
 import threading
 import urllib.error
@@ -20,7 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent if '__file__' in globals() else Path(os.environ.get('APP_ROOT', '.')).resolve()
 APP_ID = 'importer'
-VERSION = '0.1.5'
+VERSION = '0.1.6'
 STATIC_TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
                 '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml'}
 HERMES_URL = (os.environ.get('WIZARD_IMPORTER_HERMES_URL', '') or 'http://hermes-agent:9119').rstrip('/')
@@ -114,8 +115,14 @@ def status():
     return {'connected': True, 'read_only': bool(sources.get('read_only'))}
 
 
+DEST = re.compile(r'^(here|[a-z][a-z0-9-]{0,30})$')  # an agent id from the engine's sources.into, never a path
+
+
 def pick(body, keys):
-    return {k: body[k] for k in keys if k in body}
+    out = {k: body[k] for k in keys if k in body}
+    if 'dest' in out and not (isinstance(out['dest'], str) and DEST.fullmatch(out['dest'])):
+        raise Problem(400, 'Unknown agent.')
+    return out
 
 
 TOOLS = [
@@ -232,7 +239,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/sources':
                 return self.send(200, Agent.call('GET', '/sources', timeout=60))
             if path == '/api/imports':
-                return self.send(200, Agent.call('GET', '/imports', timeout=60))
+                dest = (parse_qs(urlsplit(self.path).query).get('dest') or [''])[0]
+                if dest and not DEST.fullmatch(dest):
+                    raise Problem(400, 'Unknown agent.')
+                query = '?' + urllib.parse.urlencode({'dest': dest}) if dest else ''
+                return self.send(200, Agent.call('GET', '/imports' + query, timeout=60))
         except Problem as e:
             return self.problem(e)
         name = 'index.html' if path == '/' else path[1:]
@@ -285,12 +296,12 @@ class Handler(BaseHTTPRequestHandler):
                 out = rpc(body)
                 return self.send(202 if out is None else 200, out)
             if path == '/api/scan':
-                return self.send(200, Agent.call('POST', '/scan', pick(body, ('path', 'paths'))))
+                return self.send(200, Agent.call('POST', '/scan', pick(body, ('path', 'paths', 'dest'))))
             if path == '/api/import':
-                keys = ('import_id', 'chats', 'skills', 'personality', 'about')
+                keys = ('import_id', 'chats', 'skills', 'personality', 'facts', 'about', 'dest')
                 return self.send(200, Agent.call('POST', '/import', pick(body, keys)))
             if path == '/api/undo':
-                return self.send(200, Agent.call('POST', '/undo', pick(body, ('import_id',))))
+                return self.send(200, Agent.call('POST', '/undo', pick(body, ('import_id', 'dest'))))
             raise Problem(404, 'Not found.')
         except Problem as e:
             self.problem(e)
