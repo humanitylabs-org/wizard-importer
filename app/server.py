@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent if '__file__' in globals() else Path(os.environ.get('APP_ROOT', '.')).resolve()
 APP_ID = 'importer'
-VERSION = '0.1.6'
+VERSION = '0.1.7'
 STATIC_TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
                 '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml'}
 HERMES_URL = (os.environ.get('WIZARD_IMPORTER_HERMES_URL', '') or 'http://hermes-agent:9119').rstrip('/')
@@ -116,12 +116,15 @@ def status():
 
 
 DEST = re.compile(r'^(here|[a-z][a-z0-9-]{0,30})$')  # an agent id from the engine's sources.into, never a path
+SCAN_ID = re.compile(r'^[A-Za-z0-9_-]{8,64}$')       # the screen's random id for one scan (progress, cancel)
 
 
 def pick(body, keys):
     out = {k: body[k] for k in keys if k in body}
     if 'dest' in out and not (isinstance(out['dest'], str) and DEST.fullmatch(out['dest'])):
         raise Problem(400, 'Unknown agent.')
+    if 'scan_id' in out and not (isinstance(out['scan_id'], str) and SCAN_ID.fullmatch(out['scan_id'])):
+        raise Problem(400, 'Invalid scan id.')
     return out
 
 
@@ -238,6 +241,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, status())
             if path == '/api/sources':
                 return self.send(200, Agent.call('GET', '/sources', timeout=60))
+            if path == '/api/progress':
+                scan_id = (parse_qs(urlsplit(self.path).query).get('scan_id') or [''])[0]
+                if not SCAN_ID.fullmatch(scan_id):
+                    raise Problem(400, 'Invalid scan id.')
+                return self.send(200, Agent.call('GET', '/progress?' + urllib.parse.urlencode({'scan_id': scan_id}), timeout=20))
             if path == '/api/imports':
                 dest = (parse_qs(urlsplit(self.path).query).get('dest') or [''])[0]
                 if dest and not DEST.fullmatch(dest):
@@ -296,7 +304,9 @@ class Handler(BaseHTTPRequestHandler):
                 out = rpc(body)
                 return self.send(202 if out is None else 200, out)
             if path == '/api/scan':
-                return self.send(200, Agent.call('POST', '/scan', pick(body, ('path', 'paths', 'dest'))))
+                return self.send(200, Agent.call('POST', '/scan', pick(body, ('path', 'paths', 'dest', 'scan_id'))))
+            if path == '/api/cancel':
+                return self.send(200, Agent.call('POST', '/cancel', pick(body, ('scan_id',)), timeout=20))
             if path == '/api/import':
                 keys = ('import_id', 'chats', 'skills', 'personality', 'facts', 'about', 'dest')
                 return self.send(200, Agent.call('POST', '/import', pick(body, keys)))

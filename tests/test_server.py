@@ -48,7 +48,7 @@ class FakeDashboard(BaseHTTPRequestHandler):
         FakeDashboard.calls.append((self.command, self.path, self.headers.get('X-Wizard-Import'), raw))
         if not self.authed():
             return self.reply(401, {'detail': 'Unauthorized'})
-        if self.path.endswith('/scan'):
+        if self.path.endswith('/scan') or self.path.endswith('/cancel'):
             return self.reply(200, {'success': True, 'import_id': 'abc', 'echo': json.loads(raw)})
         return self.reply(409, {'detail': 'Scan the export first.'})
 
@@ -121,6 +121,22 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(body['echo'], {'path': 'Inbox/x.zip'})
         self.assertEqual(FakeDashboard.calls[-1][:3], ('POST', '/api/plugins/wizard-os/bring-data/scan', '1'))
+
+    def test_scan_progress_and_cancel_relay_a_checked_scan_id(self):
+        code, body = self.req('POST', '/api/scan', {'path': 'x', 'scan_id': 'sabcdef0123'})
+        self.assertEqual((code, body['echo']), (200, {'path': 'x', 'scan_id': 'sabcdef0123'}))
+        self.assertEqual(self.req('GET', '/api/progress?scan_id=sabcdef0123')[0], 200)
+        self.assertEqual(FakeDashboard.calls[-1][1], '/api/plugins/wizard-os/bring-data/progress?scan_id=sabcdef0123')
+        code, body = self.req('POST', '/api/cancel', {'scan_id': 'sabcdef0123', 'evil': 1})
+        self.assertEqual((code, body['echo']), (200, {'scan_id': 'sabcdef0123'}))
+        self.assertEqual(FakeDashboard.calls[-1][:3], ('POST', '/api/plugins/wizard-os/bring-data/cancel', '1'))
+        calls = len(FakeDashboard.calls)
+        for bad in ('../../x', 'short', 'a b c d e f g h', 3):
+            self.assertEqual(self.req('POST', '/api/scan', {'path': 'x', 'scan_id': bad})[0], 400, bad)
+            self.assertEqual(self.req('POST', '/api/cancel', {'scan_id': bad})[0], 400, bad)
+        self.assertEqual(self.req('GET', '/api/progress?scan_id=..%2F..%2Fsources')[0], 400)
+        self.assertEqual(self.req('POST', '/api/cancel', {'scan_id': 'sabcdef0123'}, headers={'X-Wizard-Request': ''})[0], 403)
+        self.assertEqual(len(FakeDashboard.calls), calls)
 
     def test_dest_is_an_agent_id_relayed_to_the_engine(self):
         code, body = self.req('POST', '/api/scan', {'path': 'x', 'dest': 'oscar-os'})

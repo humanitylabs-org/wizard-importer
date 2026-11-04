@@ -20,6 +20,7 @@ const S = {
   uploads: [],             // [{name, pct, path, error}]
   mail: { state: 'unknown', hits: [] },
   seen: new Set(),         // Files entries already there (only a new arrival continues by itself)
+  scanId: null, prog: null, scanStart: 0, moved: 0,  // the running scan: engine progress, when it last moved
 };
 
 /* ---------------- small DOM helpers ---------------- */
@@ -107,7 +108,8 @@ function go(view) {
 }
 function fit(area) { area.style.height = 'auto'; area.style.height = (area.scrollHeight + 2) + 'px'; }
 function back() {
-  if (S.view === 'importing' || S.view === 'scanning') return true; // stays until the step answers
+  if (S.view === 'scanning') { cancelScan(); return true; } // Back stops the reading
+  if (S.view === 'importing') return true; // stays until the step answers
   if (S.view === 'preview') { const to = S.from === 'guide' ? 'guide' : S.from === 'into' ? 'into' : 'home'; if (to === 'home') { S.dest = ''; S.selfPath = null; } go(to); if (S.view === 'guide') poll(); else refresh(); return true; }
   if (S.view === 'guide') { S.waiting = null; saveWaiting(); clearTimeout(pollT); clearTimeout(mailT); } // leaving the guide cancels the wait
   if (S.view === 'guide' || S.view === 'error' || S.view === 'done' || S.view === 'into') { S.scan = null; S.links = null; S.dest = ''; S.selfPath = null; go('home'); refresh(); return true; }
@@ -218,9 +220,13 @@ async function startScan(args, source) {
   clearTimeout(pollT); clearTimeout(mailT);
   if (source) S.source = source;
   if (S.view !== 'scanning' && S.view !== 'preview') S.from = S.view;
-  S.error = ''; S.scanArgs = args; go('scanning');
+  const id = 's' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
+  S.error = ''; S.scanArgs = args; S.scanId = id; S.prog = null; S.scanStart = S.moved = Date.now();
+  go('scanning'); watchScan(id);
   try {
-    const scan = await api('api/scan', S.dest ? { ...args, dest: S.dest } : args);
+    const scan = await api('api/scan', { ...(S.dest ? { ...args, dest: S.dest } : args), scan_id: id });
+    if (S.scanId !== id) return; // cancelled (or replaced by a newer scan) while it was reading
+    S.scanId = null;
     S.scan = scan; S.waiting = null; saveWaiting();
     const here = scan.personality && scan.personality.here;
     const blocked = scan.blocked || {};
@@ -234,7 +240,77 @@ async function startScan(args, source) {
       facts: (scan.draft_facts || []).flatMap(f => String(f).split(/\n+/)).map(x => x.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).map(text => ({ text, on: true })),
     };
     go('preview');
-  } catch (e) { S.error = plainError(e.message); go('error'); }
+  } catch (e) {
+    if (S.scanId !== id) return;
+    S.scanId = null; S.error = plainError(e.message); go('error');
+  }
+}
+/* Progress while a scan reads: the engine's step and N of M every 1.5 s, and a heartbeat every second. */
+let beatT = 0;
+async function watchScan(id) {
+  clearInterval(beatT);
+  beatT = setInterval(() => { if (S.scanId !== id) clearInterval(beatT); else paintScan(); }, 1000);
+  while (S.scanId === id) {
+    try {
+      const p = await api('api/progress?scan_id=' + id);
+      if (S.scanId !== id) break;
+      if (p.state === 'running') {
+        if (!S.prog || p.step !== S.prog.step || p.done !== S.prog.done) S.moved = Date.now();
+        S.prog = p; paintScan();
+      }
+    } catch (e) { /* an agent without progress: the heartbeat still runs */ }
+    await new Promise(r => setTimeout(r, 1500));
+  }
+}
+function cancelScan() {
+  const id = S.scanId;
+  if (!id) return;
+  S.scanId = null; clearInterval(beatT);
+  api('api/cancel', { scan_id: id }).catch(() => { /* it stops anyway; its answer is ignored */ });
+  say('Stopped reading. Nothing was saved.', true);
+  const to = S.from === 'guide' ? 'guide' : S.from === 'into' ? 'into' : 'home';
+  if (to === 'home') { S.dest = ''; S.selfPath = null; }
+  go(to); if (to === 'guide') poll(); else refresh();
+}
+const STEP_TEXT = { opening: 'Opening it', reading: 'Opening the export', chats: 'Reading chats', skills: 'Reading skills',
+  facts: 'Reading its fact store', checking: 'Almost done' };
+/* What the reading screen says: pure, from the engine's progress (or null) and seconds since start / last move. */
+function scanText(p, elapsed, still) {
+  const clock = `${Math.floor(elapsed / 60)}:${String(Math.floor(elapsed % 60)).padStart(2, '0')}`;
+  const out = { line: 'Opening it', left: '', pct: null, beat: `Still working · ${clock}`, slow: false };
+  if (p) {
+    out.line = STEP_TEXT[p.step] || 'Reading';
+    if (p.step === 'chats' && p.total) out.line += ` · ${fmt(p.done)} of ${fmt(p.total)}`;
+    const weight = { opening: 2, reading: 4, skills: 92, facts: 95, checking: 98 }[p.step];
+    const part = typeof p.fraction === 'number' ? p.fraction : p.total ? p.done / p.total : 0; // work done, not chats
+    out.pct = p.step === 'chats' ? 5 + Math.round(85 * part) : weight ?? null;
+    const s = p.seconds_left;
+    if (typeof s === 'number') out.left = s < 45 ? 'less than a minute left' : s < 90 ? 'about 1 minute left' : `about ${Math.round(s / 60)} minutes left`;
+  }
+  // No movement for a minute (or no progress at all from an older agent for 90 s): say so, offer Cancel.
+  out.slow = p ? still >= 60 : elapsed >= 90;
+  return out;
+}
+function paintScan() {
+  if (S.view !== 'scanning') return;
+  const now = Date.now();
+  const t = scanText(S.prog, (now - S.scanStart) / 1000, Math.max((now - S.moved) / 1000, (S.prog && S.prog.idle) || 0));
+  const set = (id, text) => { const n = $(id); if (n && n.textContent !== text) n.textContent = text; };
+  set('scan-line', t.line); set('scan-left', t.left); set('scan-beat', t.beat);
+  const bar = $('scan-bar');
+  if (bar) { bar.hidden = t.pct === null; bar.style.setProperty('--v', (t.pct || 0) + '%'); bar.setAttribute('aria-valuenow', String(t.pct || 0)); }
+  const slow = $('scan-slow'); if (slow) slow.hidden = !t.slow;
+}
+function scanView() {
+  const view = h('div', { class: 'imp-center-col' }, h('span', { class: 'imp-spin big', 'aria-hidden': 'true' }),
+    h('h1', { class: 'imp-h1', text: 'Reading your export…' }), h('p', { class: 'imp-sub', text: 'Nothing is saved yet.' }),
+    h('div', { class: 'wz-meter imp-scan-meter' }, h('i', { id: 'scan-bar', role: 'progressbar', 'aria-label': 'Reading', 'aria-valuemin': '0', 'aria-valuemax': '100', hidden: true }, h('b'))),
+    h('p', { class: 'imp-scan-line', id: 'scan-line', 'aria-live': 'polite' }), h('p', { class: 'imp-muted', id: 'scan-left' }),
+    h('p', { class: 'imp-muted imp-scan-beat', id: 'scan-beat' }),
+    h('p', { class: 'imp-scan-slow', id: 'scan-slow', hidden: true, text: 'This is taking longer than usual. You can wait, or cancel and try again later.' }),
+    h('button', { class: 'imp-link', type: 'button', 'data-cancel-scan': '1', onclick: cancelScan, text: 'Cancel' }));
+  queueMicrotask(paintScan);
+  return view;
 }
 async function runImport() {
   const c = S.choice, sc = S.scan;
@@ -329,12 +405,12 @@ function confirmUndo(entry) {
 function render() {
   const v = S.view;
   const body = v === 'home' ? homeView() : v === 'guide' ? guideView() : v === 'into' ? intoView()
-    : v === 'scanning' ? busyView('Reading your export…', 'Nothing is saved yet.')
+    : v === 'scanning' ? scanView()
     : v === 'preview' ? previewView() : v === 'importing' ? busyView('Bringing it in…', 'This takes a moment.')
     : v === 'done' ? doneView() : errorView();
   screen.dataset.view = v;
   const step = { home: 1, guide: 2, into: 2, scanning: 2, preview: 3, importing: 3, done: 4 }[v] || 0;
-  const canBack = ['guide', 'into', 'preview', 'error'].includes(v);
+  const canBack = ['guide', 'into', 'scanning', 'preview', 'error'].includes(v);
   const top = h('div', { class: 'imp-top' },
     canBack ? h('button', { class: 'imp-back', type: 'button', 'data-back': '1', 'aria-label': 'Back', onclick: () => back() }, svg('M15 5l-7 7 7 7')) : h('span', { class: 'imp-back-sp' }),
     step ? h('div', { class: 'imp-dots', 'aria-label': `Step ${step} of 4` }, [1, 2, 3, 4].map(i => h('i', { class: i === step ? 'on' : i < step ? 'past' : '' }))) : h('span'),
@@ -359,6 +435,8 @@ function whenText(ts) {
   const d = new Date(1000 * ts), days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
   return days === 0 ? 'today' : days === 1 ? 'yesterday' : 'on ' + d.toLocaleDateString();
 }
+/* A cheap up-front guess from the engine (size of what it reads), shown on the row: "about 2 min". */
+const estText = s => !s ? '' : s < 60 ? ' · under a minute' : ` · about ${Math.round(s / 60)} min`;
 const doneSub = (hit, rest) => `Brought in ${whenText(hit.imported_at || hit.archived_at)}${hit.into ? ' to ' + hit.into : ''} · tap to bring in again`;
 function readyRows(filterKind) {
   const byDone = list => list.map(x => ({ x, hit: broughtIn(x.path, x.self) })).sort((a, b) => (a.hit ? 1 : 0) - (b.hit ? 1 : 0));
@@ -368,10 +446,10 @@ function readyRows(filterKind) {
     h('span', { class: 'imp-src-t' }, h('b', { text: title }), sub ? h('small', { text: sub }) : null), h('span', { class: 'imp-chev', 'aria-hidden': 'true' }, svg('M9 5l7 7-7 7')));
   return [
     ...local.filter(({ x: s }) => !s.self || intoList().length).map(({ x: s, hit }) => s.self
-      ? row(G.hermes, localTitle(s), hit ? doneSub(hit) : `${s.label} · its memories, facts, skills and chats go into an agent inside Wizard OS`, () => startSelf(s), { 'data-local': 'self', 'data-done': hit ? '1' : undefined })
-      : row(G[s.kind] || G.other, localTitle(s), hit ? doneSub(hit) : s.kind === 'hermes' ? 'Another agent on this box · no export needed' : 'On this Wizard · no export needed',
+      ? row(G.hermes, localTitle(s), hit ? doneSub(hit) : `${s.label} · its memories, facts, skills and chats go into an agent inside Wizard OS${estText(s.estimate_seconds)}`, () => startSelf(s), { 'data-local': 'self', 'data-done': hit ? '1' : undefined })
+      : row(G[s.kind] || G.other, localTitle(s), hit ? doneSub(hit) : (s.kind === 'hermes' ? 'Another agent on this box · no export needed' : 'On this Wizard · no export needed') + estText(s.estimate_seconds),
         () => { S.dest = ''; S.selfPath = null; startScan({ path: s.path }, s.kind); }, { 'data-local': s.kind, 'data-done': hit ? '1' : undefined })),
-    ...files.map(({ x: f, hit }) => row(G[f.kind === 'claude-links' ? 'claude' : f.kind] || G.other, f.name, hit ? doneSub(hit) : `In your Files · ${bytes(f.size || 0)}`, () => { S.selfPath = null; S.dest = ''; startScan({ path: f.path }, f.kind); }, { 'data-file': f.path, 'data-done': hit ? '1' : undefined })),
+    ...files.map(({ x: f, hit }) => row(G[f.kind === 'claude-links' ? 'claude' : f.kind] || G.other, f.name, hit ? doneSub(hit) : `In your Files · ${bytes(f.size || 0)}${estText(f.estimate_seconds)}`, () => { S.selfPath = null; S.dest = ''; startScan({ path: f.path }, f.kind); }, { 'data-file': f.path, 'data-done': hit ? '1' : undefined })),
   ];
 }
 function homeView() {
@@ -523,14 +601,22 @@ function pickSkills() {
     sc.more_new_skills ? h('p', { class: 'imp-muted', text: `${fmt(sc.more_new_skills)} more are not listed: they come in only while you leave every skill chosen.` }) : null,
     h('div', { class: 'wz-actions' }, h('button', { class: 'wz-button', type: 'button', onclick: closeSheet, text: 'Done' }))]);
 }
+/* The "What I know about you" line: saved = always-on memory + the long-term fact store (when memory has no room). */
+function aboutLine(a) {
+  const saved = (a.memory_added || 0) + (a.in_fact_store || 0) + (a.already_known || 0);
+  const left = (a.not_added || []).length;
+  const parts = [];
+  if (saved || !left) parts.push(`${plural(saved, 'thing')} about you, saved to memory`);
+  if (left) parts.push(saved ? `${fmt(left)} more in Files › Imported › About me` : `${plural(left, 'thing')} about you, in Files › Imported › About me`);
+  if (a.waiting_for_approval) parts.push(`${fmt(a.waiting_for_approval)} waiting for your approval`);
+  return parts.join(', ');
+}
 function doneView() {
   const r = S.result, d = r.done || {}, sc = S.scan || {};
   const lines = [];
   if (d.facts) lines.push(`${plural(d.facts.facts_added, 'fact')} in its fact store`);
   if (d.chats) lines.push(`${plural(d.chats.chats_written, 'chat')} it can look up, in Files › ${String(d.chats.folder).replace('/', ' › ')}`);
-  if (d.about) lines.push(`${plural(d.about.memory_added + d.about.already_known, 'thing')} about you`
-    + (d.about.not_added && d.about.not_added.length ? ` (${fmt(d.about.not_added.length)} more are in About me: memory is full)` : '')
-    + (d.about.waiting_for_approval ? `, ${fmt(d.about.waiting_for_approval)} waiting for your approval` : ''));
+  if (d.about) lines.push(aboutLine(d.about));
   if (d.skills) lines.push(`${plural(d.skills.installed.length, 'new skill')}${d.skills.installed.length ? ': ' + d.skills.installed.slice(0, 6).map(s => s.name).join(', ') + (d.skills.installed.length > 6 ? '…' : '') : ''}`);
   if (d.personality) lines.push('its personality, from your next chat');
   const errors = Object.entries(r.errors || {});
@@ -555,7 +641,7 @@ if (new URLSearchParams(location.search).get('embedded') === '1') document.docum
 for (const ev of ['dragover', 'drop']) document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files.length) { if (S.view !== 'guide') { S.source = S.source || 'other'; go('guide'); } addFiles(e.dataTransfer.files); } });
 $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
 if (WA) {
-  WA.ready({ name: 'importer', version: '0.1.6' });
+  WA.ready({ name: 'importer', version: '0.1.7' });
   WA.back.register({ canGoBack: () => S.view !== 'home', back });
 } else say('Wizard system functions are unavailable. Open the Importer through Wizard.', true);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.view === 'guide') poll(); });

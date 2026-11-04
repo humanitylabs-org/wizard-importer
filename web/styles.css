@@ -134,3 +134,9 @@ html[data-color-scheme="dark"] .imp-mark.mono img { filter: invert(1); }
 .imp-pending-x { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px; border-radius: var(--r); color: var(--ink-2); background: var(--fill); font-size: var(--wz-text-sm); }
 .imp-pending-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 .imp-src[data-done] .imp-src-t small { color: var(--ink-3); }
+/* Reading screen: progress bar, "Reading chats · N of M", time left, heartbeat, slow note. */
+.imp-scan-meter { width: min(280px, 100%); margin: 18px auto 0; }
+.imp-scan-line { margin: 10px 0 0; text-align: center; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#scan-left:empty { display: none; }
+.imp-scan-beat { text-align: center; font-variant-numeric: tabular-nums; }
+.imp-scan-slow { margin: 6px 0 0; text-align: center; color: var(--ink-2); font-size: var(--wz-text-sm); }
