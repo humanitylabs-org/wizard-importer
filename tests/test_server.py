@@ -142,5 +142,16 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(body['result']['structuredContent']['files'], [])
 
 
+class PackageTests(unittest.TestCase):
+    def test_install_form_values_reach_the_container(self):
+        # The install form's agent address and login must be passed into the container, or an installed app
+        # can never sign in to the agent (0.1.0 shipped without them).
+        compose = (ROOT / 'runtipi/docker-compose.yml').read_text('utf-8')
+        fields = json.loads((ROOT / 'runtipi/config.json').read_text('utf-8'))['form_fields']
+        for field in fields:
+            var = field['env_variable']
+            self.assertIn(f'      {var}: ${{{var}:-', compose, var)
+
+
 if __name__ == '__main__':
     unittest.main()
