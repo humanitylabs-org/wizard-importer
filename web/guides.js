@@ -22,14 +22,14 @@ window.ImporterGuides = {
     tile: 'Memories, custom instructions and chats. ChatGPT emails you a download link.',
     intro: 'Ask ChatGPT for a copy. Free, about a minute.',
     steps: [
-      'Tap Open ChatGPT settings and sign in.',
-      'Next to Export data, tap Export, then Confirm.',
+      'Open ChatGPT settings.',
+      'Tap Export data, then Confirm.',
     ],
     phone: 'Phone app: Settings › Data controls › Export data.',
-    link: { label: 'Open ChatGPT settings', url: 'https://chatgpt.com/#settings/DataControls' },
-    next: 'ChatGPT emails you a download link, usually within minutes. Download it within 24 hours.',
+    link: { label: 'Open ChatGPT', url: 'https://chatgpt.com/#settings/DataControls' },
+    next: 'Waiting for ChatGPT’s email…',
     expect: [
-      'It can take up to 7 days. Check spam if nothing arrives.',
+      'The email usually comes in minutes (up to 7 days). Its link works for 24 hours; check spam.',
       'Download signed in to the same ChatGPT account.',
     ],
     notes: [
@@ -46,14 +46,14 @@ window.ImporterGuides = {
     tile: 'Chats, projects and memory from claude.ai. Claude emails you a download link.',
     intro: 'Ask Claude for a copy. Use a computer: the phone apps can’t export.',
     steps: [
-      'Tap Open Claude settings and sign in.',
+      'Open Claude settings on a computer.',
       'Click Export data.',
     ],
     phone: '',
-    link: { label: 'Open Claude settings', url: 'https://claude.ai/settings/data-privacy-controls' },
-    next: 'Claude emails you a download link, usually soon. Download it within 24 hours.',
+    link: { label: 'Open Claude', url: 'https://claude.ai/settings/data-privacy-controls' },
+    next: 'Waiting for Claude’s email…',
     expect: [
-      'Download signed in to Claude. If the link expires, just ask again.',
+      'The email link works for 24 hours. If it expires, just ask again.',
       'Got a small .json with several links instead of a zip? Drop it here and the Importer opens each link.',
     ],
     notes: [
