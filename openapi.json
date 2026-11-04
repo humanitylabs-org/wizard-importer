@@ -1,0 +1,15 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Importer", "version": "0.1.0", "description": "Relays to the agent's bring-data engine (wizard-os plugin). Writes need X-Wizard-Request: importer."},
+  "paths": {
+    "/healthz": {"get": {"summary": "Health", "responses": {"200": {"description": "ok"}}}},
+    "/api/status": {"get": {"summary": "Whether the agent's engine is reachable, and preview mode", "responses": {"200": {"description": "{connected, read_only} or {connected:false, reason, message}"}}}},
+    "/api/sources": {"get": {"summary": "Agent folders on this box and exports in Files Inbox/Downloads", "responses": {"200": {"description": "{local:[{kind,label,path}], files:[{path,name,size,modified,kind,links?}], read_only}"}}}},
+    "/api/imports": {"get": {"summary": "Earlier imports", "responses": {"200": {"description": "{imports:[...]}"}}}},
+    "/api/scan": {"post": {"summary": "Read an export or folder (nothing saved)", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "paths": {"type": "array", "items": {"type": "string"}}}}}}}, "responses": {"200": {"description": "counts, draft_facts, new_skills, personality, import_id"}}}},
+    "/api/import": {"post": {"summary": "Bring in the owner's choices", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["import_id"], "properties": {"import_id": {"type": "string"}, "chats": {"type": "boolean"}, "skills": {"type": "array", "items": {"type": "string"}}, "personality": {"type": "boolean"}, "about": {"type": "object", "properties": {"facts": {"type": "array", "items": {"type": "string"}}, "text": {"type": "string"}}}}}}}}, "responses": {"200": {"description": "{import_id, done, errors}"}}}},
+    "/api/undo": {"post": {"summary": "Undo one import", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["import_id"], "properties": {"import_id": {"type": "string"}}}}}}, "responses": {"200": {"description": "what was removed or restored"}}}},
+    "/api/upload": {"put": {"summary": "Stream an export into Files/Inbox (query: name)", "requestBody": {"content": {"application/octet-stream": {}}}, "responses": {"200": {"description": "{path, size}"}}}},
+    "/mcp": {"post": {"summary": "MCP: importer_sources, importer_imports (read-only)", "responses": {"200": {"description": "JSON-RPC"}}}}
+  }
+}

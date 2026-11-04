@@ -1,0 +1,59 @@
+/* Importer-only layout. Colours, type, rows, cards, pills, sheets and buttons come from the kit (wizard-ui.css). */
+.imp-lead { margin: 6px 8px 14px; color: var(--ink-2); font-size: var(--wz-text-md); line-height: 1.45; }
+.imp-muted { color: var(--ink-3); font-size: var(--wz-text-sm); line-height: 1.45; }
+#screen > p.imp-muted, .wz-sec > p.imp-muted { margin: 4px 8px 8px; }
+#screen a:not(.wz-button) { color: var(--accent); text-underline-offset: 2px; }
+.wz-more > ul, .wz-more > a { margin-left: 8px; }
+.imp-banner { display: flex; align-items: center; gap: var(--wz-space-3); margin: 0 0 var(--wz-space-3); }
+.imp-banner p { margin: 0; color: var(--ink-2); font-size: var(--wz-text-sm); }
+.imp-mark { position: relative; overflow: hidden; }
+.imp-mark img { width: 62%; height: 62%; object-fit: contain; }
+.imp-mark i { position: absolute; right: 2px; bottom: 1px; font-family: var(--wz-font-mono); font-size: var(--wz-text-sm); font-weight: 700; line-height: 1; font-style: normal; transform: scale(.7); transform-origin: bottom right; color: var(--ink); background: var(--wz-panel); border-radius: 4px; padding: 1px 2px; }
+.imp-tiles { padding: 4px 0 8px; }
+.imp-tile { display: flex; align-items: flex-start; gap: var(--wz-space-3); width: 100%; min-height: 92px; text-align: left; color: var(--ink); cursor: pointer; transition: background 140ms, border-color 140ms; }
+@media (hover: hover) { .imp-tile:hover { border-color: var(--line-2); background: var(--fill-2); } }
+.imp-tile .wz-tile { width: 44px; height: 44px; }
+.imp-tile-t { display: grid; gap: 4px; min-width: 0; }
+.imp-tile b { font-size: var(--wz-text-lg); font-weight: 700; }
+.imp-tile small { color: var(--ink-3); font-size: var(--wz-text-sm); line-height: 1.4; }
+.imp-guide-head { display: flex; align-items: center; gap: var(--wz-space-3); margin: 6px 8px 0; }
+.imp-guide-head .wz-tile { width: 44px; height: 44px; }
+.imp-guide-head h2 { margin: 0; font-size: var(--wz-text-title); font-weight: 750; }
+.imp-steps, .imp-expect { margin: 4px 8px 10px; padding-left: 22px; display: grid; gap: 8px; color: var(--ink); line-height: 1.45; }
+.imp-expect { color: var(--ink-2); }
+.imp-steps li::marker { color: var(--accent); font-weight: 700; }
+.imp-command { display: flex; align-items: center; gap: var(--wz-space-2); margin: 0 8px 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--fill); }
+.imp-command code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-family: var(--wz-font-mono); font-size: var(--wz-text-sm); line-height: 1.5; color: var(--ink); }
+.imp-small { min-height: 36px; padding: 4px 12px; font-size: var(--wz-text-sm); }
+.imp-wait { display: flex; align-items: center; gap: var(--wz-space-3); margin: 4px 8px 12px; color: var(--ink-2); font-size: var(--wz-text-sm); line-height: 1.45; }
+.imp-spin { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: imp-spin 900ms linear infinite; }
+.imp-spin.big { width: 34px; height: 34px; border-width: 3px; margin: 0 auto 14px; display: block; }
+@keyframes imp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .imp-spin { animation-duration: 3s; } }
+.imp-mail { margin: 0 0 var(--wz-space-3); display: grid; gap: 6px; justify-items: start; }
+.imp-mail p { margin: 0; }
+.imp-waiting { display: grid; gap: 4px; margin: 0 0 var(--wz-space-3); }
+.imp-waiting p { margin: 0; }
+.imp-drop { display: grid; justify-items: center; gap: 8px; margin: 4px 0 8px; padding: 22px 16px; border: 2px dashed var(--line-2); border-radius: var(--r); text-align: center; color: var(--ink-2); transition: border-color 140ms, background 140ms; }
+.imp-drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.imp-drop small { color: var(--ink-3); }
+.imp-meter { width: 72px; }
+.imp-meter i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.imp-path { display: flex; gap: var(--wz-space-2); margin: 8px 0; }
+.imp-found { margin: 10px 8px 2px; font-size: var(--wz-text-lg); font-weight: 650; color: var(--ink); line-height: 1.4; }
+.imp-option { display: flex; align-items: center; gap: var(--wz-space-2); }
+.imp-option > .wz-row { flex: 1; }
+.imp-card h2 { margin: 0 0 6px; font-size: var(--wz-text-lg); font-weight: 700; }
+.imp-card p { margin: 0 0 10px; }
+.imp-facts { display: block; width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-tile); background: var(--fill); color: var(--ink); font: var(--wz-text-md)/1.55 var(--wz-font-ui); resize: vertical; overflow: hidden; }
+.imp-facts:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.imp-go { padding: var(--wz-space-3) 8px var(--wz-space-5); }
+.imp-center { justify-content: center; }
+.imp-busy, .imp-done { padding-top: 48px; }
+.imp-done .wz-tile svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.imp-knows { margin: 0 auto 8px; max-width: 34em; }
+.imp-ready { margin-bottom: var(--wz-space-2); }
+html[data-embedded="1"] .wz-head { display: none; }
+/* One-colour brand marks (ChatGPT, Hermes) are drawn dark: show them light on dark skins. */
+html[data-color-scheme="dark"] .imp-mark.mono img { filter: invert(1); }
+.wz-sec > .wz-actions { padding-left: 8px; }

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-app="importer">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Importer</title>
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="wizard-tokens.css">
+  <link rel="stylesheet" href="wizard-ui.css">
+  <link rel="stylesheet" href="standalone.css">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="/wizard-os-home/core/app-client.js"></script>
+  <script defer src="wizard-sheet.js"></script>
+  <script defer src="guides.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="wz-app" id="app">
+    <header class="wz-head"><h1 id="title">Bring your AI</h1></header>
+    <main class="wz-scroll" id="screen" aria-live="polite"></main>
+    <p id="status" class="wz-status wz-sr" role="status" aria-live="polite"></p>
+  </div>
+  <input id="file" type="file" accept=".zip,.json,application/zip,application/json" multiple hidden>
+  <dialog class="wz-sheet" id="sheet" aria-labelledby="sheet-h"></dialog>
+</body>
+</html>
