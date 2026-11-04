@@ -196,14 +196,14 @@ async function startScan(args, source) {
       skills: scan.new_skill_count > 0,
       skillNames: new Set((scan.new_skills || []).map(s => s.name)), allSkills: true,
       personality: !!(scan.personality && scan.personality.found) && here !== 'custom',
-      facts: (scan.draft_facts || []).join('\n'),
+      facts: (scan.draft_facts || []).flatMap(f => String(f).split(/\n+/)).map(x => x.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).map(text => ({ text, on: true })),
     };
     go('preview');
   } catch (e) { S.error = e.message; go('error'); }
 }
 async function runImport() {
   const c = S.choice, sc = S.scan;
-  const facts = c.about ? c.facts.split('\n').map(x => x.trim()).filter(Boolean) : [];
+  const facts = c.about ? c.facts.filter(f => f.on).map(f => f.text.replace(/\s+/g, ' ').trim()).filter(Boolean) : [];
   const body = {
     import_id: sc.import_id, chats: c.chats, personality: c.personality, skills: !c.skills ? [] : c.allSkills ? 'all' : [...c.skillNames],
     about: facts.length ? { facts, text: '# About me\n\n' + facts.map(f => '- ' + f).join('\n') + `\n\n*From ${sc.source}, approved by you in the Importer.*` } : undefined,
@@ -252,7 +252,7 @@ async function addFiles(files) {
 let sheetBack = null;
 function openSheet(build) {
   const d = $('sheet');
-  d.replaceChildren(h('div', { class: 'wz-sheet-grip' }), h('button', { class: 'wz-sheet-x', type: 'button', 'aria-label': 'Close', onclick: closeSheet, text: '×' }), ...build());
+  d.replaceChildren(h('div', { class: 'wz-sheet-grip' }), h('button', { class: 'wz-sheet-x', type: 'button', 'aria-label': 'Close', onclick: closeSheet, text: '×' }), ...build().filter(Boolean));
   window.WzSheet.open(d);
   if (WA && !sheetBack) sheetBack = WA.back.push(() => { closeSheet(); return true; });
 }
@@ -395,21 +395,27 @@ function previewView() {
   const opts = [];
   if (n.chats || n.projects) opts.push(option('chats', `Chats${n.projects ? ' and projects' : ''}`,
     'Saved as files your Wizard can search.'));
-  if ((sc.draft_facts || []).length) opts.push(option('about', 'What I know about you', 'You check it first.'));
   if (sc.new_skill_count) opts.push(option('skills', 'Skills', `${c.allSkills ? 'All' : fmt(c.skillNames.size) + ' of'} ${plural(sc.new_skill_count, 'new skill')}${c.allSkills ? '' : ' chosen'}.${sc.skills_already_here ? ` ${fmt(sc.skills_already_here)} it already has are skipped.` : ''}`,
     h('button', { class: 'wz-button secondary imp-small imp-pick', type: 'button', onclick: pickSkills, text: 'Choose' })));
+  if (c.facts.length) opts.push(option('about', 'What I know about you', `${fmt(c.facts.filter(f => f.on).length)} of ${plural(c.facts.length, 'fact')} chosen. Review them below.`));
   if (sc.personality && sc.personality.found) opts.push(option('personality', 'Personality', sc.personality.here === 'custom'
     ? 'Replaces the current one. Undo brings it back.' : `Your ${sc.source} agent’s way of talking.`));
   out.push(opts.length ? h('ul', { class: 'wz-list imp-options' }, opts) : h('p', { class: 'imp-muted', text: 'This export has nothing the Importer can bring in yet.' }));
   if (c.about) {
-    const lines = () => c.facts.split('\n').filter(x => x.trim()).length;
-    const area = h('textarea', { class: 'imp-facts', rows: String(Math.min(14, Math.max(4, lines() + 1))), 'aria-label': 'What I know about you, one fact per line', spellcheck: 'true' });
-    area.value = c.facts;
-    area.addEventListener('input', () => { c.facts = area.value; fit(area); $('fact-count').textContent = plural(lines(), 'fact'); });
-    requestAnimationFrame(() => fit(area));
-    out.push(h('div', { class: 'imp-card' }, h('div', {}, h('h2', { text: 'What I know about you' }),
-      h('p', { class: 'imp-muted', text: 'One fact per line. Edit freely: only what’s here is saved.' }),
-      area, h('small', { class: 'imp-muted', id: 'fact-count', text: plural(lines(), 'fact') }))));
+    const cards = c.facts.map((f, i) => {
+      const box = h('textarea', { class: 'imp-fact-t', rows: '1', 'aria-label': `Fact ${i + 1}`, spellcheck: 'true' });
+      box.value = f.text;
+      box.addEventListener('input', () => { f.text = box.value; fit(box); });
+      requestAnimationFrame(() => fit(box));
+      return h('li', { class: 'imp-fact' + (f.on ? '' : ' off') },
+        h('button', { class: 'imp-fact-c', type: 'button', 'aria-pressed': String(f.on), 'aria-label': f.on ? 'Keep (tap to leave out)' : 'Left out (tap to keep)', onclick: () => { f.on = !f.on; render(); } }, check()),
+        box,
+        h('button', { class: 'imp-fact-x', type: 'button', 'aria-label': 'Delete this fact', onclick: () => { c.facts.splice(i, 1); render(); } }, svg('M6 6l12 12M18 6L6 18')));
+    });
+    out.push(h('div', { class: 'imp-card' }, h('h2', { text: 'What I know about you' }),
+      h('p', { class: 'imp-muted', text: 'Untick or edit anything. Only ticked facts are saved.' }),
+      h('ul', { class: 'imp-facts-list' }, cards),
+      h('button', { class: 'imp-link', type: 'button', onclick: () => { c.facts.push({ text: '', on: true }); render(); requestAnimationFrame(() => { const t = screen.querySelectorAll('.imp-fact-t'); t[t.length - 1]?.focus(); }); }, text: '+ Add a fact' })));
   }
   const ro = S.status && S.status.read_only;
   out.push(h('button', { class: 'wz-button imp-primary', type: 'button', id: 'import', disabled: ro || !opts.length || undefined, onclick: runImport, text: ro ? 'Preview only: nothing is saved' : 'Bring it in' }));
@@ -423,7 +429,7 @@ function pickSkills() {
       if (c.skillNames.has(s.name)) c.skillNames.delete(s.name); else c.skillNames.add(s.name);
       e.currentTarget.setAttribute('aria-pressed', String(c.skillNames.has(s.name))); c.skills = c.skillNames.size > 0;
     } }, check(), h('span', { class: 'wz-main' }, h('b', { text: s.name }),
-      h('small', { text: s.description + (s.left_behind && s.left_behind.length ? ` (leaves behind ${plural(s.left_behind.length, 'file')} that look like keys)` : '') })))))),
+      h('small', { text: (s.description || 'No description') + (s.left_behind && s.left_behind.length ? ` (leaves behind ${plural(s.left_behind.length, 'file')} that look like keys)` : '') })))))),
     sc.more_new_skills ? h('p', { class: 'imp-muted', text: `${fmt(sc.more_new_skills)} more are not listed: they come in only while you leave every skill chosen.` }) : null,
     h('div', { class: 'wz-actions' }, h('button', { class: 'wz-button', type: 'button', onclick: closeSheet, text: 'Done' }))]);
 }
@@ -451,7 +457,7 @@ if (new URLSearchParams(location.search).get('embedded') === '1') document.docum
 for (const ev of ['dragover', 'drop']) document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files.length) { if (S.view !== 'guide') { S.source = S.source || 'other'; go('guide'); } addFiles(e.dataTransfer.files); } });
 $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
 if (WA) {
-  WA.ready({ name: 'importer', version: '0.1.3' });
+  WA.ready({ name: 'importer', version: '0.1.4' });
   WA.back.register({ canGoBack: () => S.view !== 'home', back });
 } else say('Wizard system functions are unavailable. Open the Importer through Wizard.', true);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.view === 'guide') poll(); });

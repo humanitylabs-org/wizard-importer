@@ -112,3 +112,15 @@ html[data-color-scheme="dark"] .imp-mark.mono img { filter: invert(1); }
 .imp-stage > .imp-command { margin: 0; }
 .imp-stage > .imp-path { margin: 0; }
 .imp-waitline > span:last-child { flex: 0 1 auto; }
+
+.imp-facts-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.imp-fact { display: flex; align-items: flex-start; gap: 6px; padding: 6px 6px 6px 2px; border: 1px solid var(--line); border-radius: var(--r-tile); background: var(--fill-2); }
+.imp-fact.off { opacity: .55; }
+.imp-fact.off .imp-fact-t { text-decoration: line-through; }
+.imp-fact-c { flex: none; }
+.imp-fact-c .wz-check { width: 36px; height: 36px; }
+.imp-fact-t { flex: 1; min-width: 0; padding: 7px 4px; border: 0; background: transparent; color: var(--ink); font: var(--wz-text-md)/1.45 var(--wz-font-ui); resize: none; overflow: hidden; outline: 0; }
+.imp-fact-t:focus { box-shadow: inset 0 -2px 0 var(--accent); }
+.imp-fact-x { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-3); }
+.imp-fact-x svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+@media (hover: hover) { .imp-fact-x:hover { background: var(--fill); color: var(--ink); } }
