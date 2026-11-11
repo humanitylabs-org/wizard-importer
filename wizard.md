@@ -4,7 +4,7 @@ id: importer
 name: Importer
 type: service
 category: app
-version: 0.1.7
+version: 0.1.8
 summary: Bring your ChatGPT, Claude, Claude Code or Hermes memories, chats, skills and personality into your Wizard.
 license: GPL-3.0-only
 source: https://github.com/humanitylabs-org/wizard-importer
@@ -34,6 +34,9 @@ system: false
 uses: []
 needs: []
 health: /healthz
+switches:
+  contract: wizard.app-switches/1
+  path: /api/switches
 ---
 
 # Importer
