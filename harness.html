@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="/wizard-os-home/styles.css"><link rel="stylesheet" href="/wizard-os-home/core/skins.css" id="skinsCss">
+<style>body{margin:0;background:var(--bg)} iframe{border:0;width:100vw;height:100vh;display:block;background:transparent}</style></head>
+<body><iframe id="f" src="/importer/"></iframe>
+<script>
+const skin = new URLSearchParams(location.search).get('skin') || 'nebula';
+if (skin !== 'nebula') { document.documentElement.dataset.skin = skin; const l = document.createElement('link'); l.rel='stylesheet'; l.href='/wizard-os-home/skins/'+skin+'/skin.css'; document.head.appendChild(l); }
+const isColor = v => v && v.length < 96 && CSS.supports('color', v);
+const read = (s, k, f) => { const v = s.getPropertyValue('--' + k).trim(); return isColor(v) ? v : f; };
+function tokens() { // the same reading as wizard-ux web/core/appearance-host.js tokens()
+  const s = getComputedStyle(document.documentElement), scheme = (s.colorScheme || '').trim();
+  const light = /\blight\b/.test(scheme) && !/\bdark\b/.test(scheme);
+  const bg = read(s, 'bg', light ? '#f6f3ec' : '#05030c'), ink = read(s, 'ink', light ? '#1d1b17' : '#f3efff'), accent = read(s, 'violet-2', '#b99bff');
+  return { colorScheme: light ? 'light' : 'dark', tokens: { canvas: 'transparent', base: bg, chrome: read(s, 'sk-win', 'rgba(12,8,26,.82)'),
+    overlay: read(s, 'glass-2', 'rgba(28,19,58,.72)'), surface: `color-mix(in srgb, ${ink} 6%, transparent)`, 'surface-raised': `color-mix(in srgb, ${ink} 10%, transparent)`,
+    text: ink, 'text-secondary': read(s, 'ink-2', '#b9b0d8'), 'text-muted': read(s, 'ink-3', '#7d74a3'), border: read(s, 'line-2', 'rgba(205,190,255,.24)'),
+    accent, 'accent-soft': `color-mix(in srgb, ${accent} 16%, transparent)`, 'on-accent': light ? '#fffdf8' : bg, 'reader-surface': 'transparent' } };
+}
+let rev = 1;
+function push() { const t = tokens(); document.body.style.background = t.tokens.base; document.getElementById('f').contentWindow.postMessage({ type: 'wizard:appearance', appearance: { version: 1, revision: rev++, skin, presentation: 'window', colorScheme: t.colorScheme, tokens: t.tokens } }, location.origin); }
+addEventListener('message', e => { if (e.data && e.data.type === 'wizard:appearance:ready') push(); });
+setInterval(push, 500);
+</script></body></html>
