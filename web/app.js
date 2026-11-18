@@ -58,7 +58,7 @@ function plainError(text) {
   if (/\[Errno \d+\]/.test(t)) return 'Saving failed (the disk may be full or busy). Tap Try again.';
   return t;
 }
-const PART_NAME = { chats: 'Chats', skills: 'Skills', about: 'What I know about you', personality: 'Personality', facts: 'Fact store' };
+const PART_NAME = { chats: 'Chats', skills: 'Skills', about: 'What I know about you', personality: 'Personality', facts: 'Fact store', schedules: 'Scheduled jobs' };
 const intoList = () => S.sources?.into || [];
 const destLabel = id => !id || id === 'here' ? (S.sources?.here || 'this agent') : (intoList().find(d => d.id === id)?.label || id);
 /* A Hermes source row says plainly which agent it is. */
@@ -132,7 +132,7 @@ async function refresh() {
     const elsewhere = await Promise.all((sources.into || []).map(d => api('api/imports?dest=' + encodeURIComponent(d.id))
       .then(r => (r.imports || []).map(i => ({ ...i, dest: d.id, into: d.label }))).catch(() => [])));
     S.sources = sources; S.imports = [...(imports.imports || []), ...elsewhere.flat()];
-    S.status = { connected: true, read_only: !!sources.read_only };
+    S.status = { connected: true, read_only: !!sources.read_only, history: sources.history === true };
   } catch (e) {
     S.status = { connected: false, message: e.message, reason: e.reason };
   }
@@ -224,7 +224,8 @@ async function startScan(args, source) {
   S.error = ''; S.scanArgs = args; S.scanId = id; S.prog = null; S.scanStart = S.moved = Date.now();
   go('scanning'); watchScan(id);
   try {
-    const scan = await api('api/scan', { ...(S.dest ? { ...args, dest: S.dest } : args), scan_id: id });
+    const history = historyScan(S.source) ? { history: true } : {};
+    const scan = await api('api/scan', { ...(S.dest ? { ...args, dest: S.dest } : args), ...history, scan_id: id });
     if (S.scanId !== id) return; // cancelled (or replaced by a newer scan) while it was reading
     S.scanId = null;
     S.scan = scan; S.waiting = null; saveWaiting();
@@ -236,7 +237,8 @@ async function startScan(args, source) {
       store: (scan.counts.facts || 0) > 0,
       skills: scan.new_skill_count > 0,
       skillNames: new Set((scan.new_skills || []).map(s => s.name)), allSkills: true,
-      personality: !!(scan.personality && scan.personality.found) && here !== 'custom',
+      personality: !scan.history && !!(scan.personality && scan.personality.found) && here !== 'custom',
+      schedules: new Set(),  // Bring your Wizard: nothing becomes a schedule unless the owner ticks it
       facts: (scan.draft_facts || []).flatMap(f => String(f).split(/\n+/)).map(x => x.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).map(text => ({ text, on: true })),
     };
     go('preview');
@@ -318,10 +320,11 @@ async function runImport() {
   const body = {
     import_id: sc.import_id, chats: c.chats, personality: c.personality, skills: !c.skills ? [] : c.allSkills ? 'all' : [...c.skillNames],
     facts: !!c.store || undefined,
+    schedules: sc.history && c.schedules.size ? [...c.schedules] : undefined,
     about: facts.length ? { facts, text: '# About me\n\n' + facts.map(f => '- ' + f).join('\n') + `\n\n*From ${sc.source}, approved by you in the Importer.*` } : undefined,
   };
   if (S.dest) body.dest = S.dest;
-  if (!body.chats && !body.personality && !body.skills.length && !body.about && !body.facts && body.skills !== 'all') { say('Choose at least one thing to bring in.', true); return; }
+  if (!body.chats && !body.personality && !body.skills.length && !body.about && !body.facts && !body.schedules && body.skills !== 'all') { say('Choose at least one thing to bring in.', true); return; }
   await sendImport(body);
 }
 async function sendImport(body) {
@@ -334,7 +337,8 @@ function retryFailed() {
   // Again with only the parts that failed: chats overwrite the same files, skills and memories already in are skipped.
   const failed = Object.keys(S.result?.errors || {}), b = S.lastBody || {};
   const body = { import_id: b.import_id, chats: failed.includes('chats') && b.chats, personality: failed.includes('personality') && b.personality,
-    skills: failed.includes('skills') ? b.skills : [], facts: (failed.includes('facts') && b.facts) || undefined, about: failed.includes('about') ? b.about : undefined };
+    skills: failed.includes('skills') ? b.skills : [], facts: (failed.includes('facts') && b.facts) || undefined, about: failed.includes('about') ? b.about : undefined,
+    schedules: failed.includes('schedules') ? b.schedules : undefined };
   if (b.dest) body.dest = b.dest;
   sendImport(body);
 }
@@ -401,6 +405,11 @@ function confirmUndo(entry) {
   ]);
 }
 
+/* Bring your Wizard (switch hermes-history): another Hermes agent comes in as read-only History. Never the
+ * "Move this agent into Wizard OS" flow, which moves the agent itself. */
+function historyScan(source) { return !!(S.status && S.status.history) && source === 'hermes' && !S.selfPath; }
+function tileName(id) { return id === 'hermes' && S.status && S.status.history ? 'Another Hermes agent' : G[id].name; }
+
 /* ---------------- render ---------------- */
 function render() {
   const v = S.view;
@@ -463,7 +472,7 @@ function homeView() {
   const rows = readyRows();
   const tiles = ['chatgpt', 'claude', 'claude-code', 'hermes'].filter(id => !(S.sources?.local || []).some(s => s.kind === id && !s.self))
     .map(id => h('button', { class: 'imp-src', type: 'button', 'data-source': id, onclick: () => openGuide(id) }, mark(G[id]),
-      h('span', { class: 'imp-src-t' }, h('b', { text: G[id].name })), h('span', { class: 'imp-chev', 'aria-hidden': 'true' }, svg('M9 5l7 7-7 7'))));
+      h('span', { class: 'imp-src-t' }, h('b', { text: tileName(id) })), h('span', { class: 'imp-chev', 'aria-hidden': 'true' }, svg('M9 5l7 7-7 7'))));
   out.push(h('div', { class: 'imp-list' }, ...rows, ...tiles));
   out.push(h('button', { class: 'imp-link', type: 'button', 'data-source': 'other', onclick: () => openGuide('other'), text: 'Something else' }));
   out.push(h('p', { class: 'imp-fine', text: 'Nothing is saved until you approve it.' }));
@@ -559,16 +568,25 @@ function previewView() {
   const block = Object.values(blocked)[0];
   if (block) out.push(h('div', { class: 'wz-card imp-banner imp-blocked' }, h('span', { class: 'wz-pill warn', text: 'Files is locked' }), h('p', { text: block })));
   const opts = [];
-  if (n.chats || n.projects) opts.push(option('chats', `Chats${n.projects ? ' and projects' : ''}`,
-    'Saved as files your Wizard can search.'));
-  if (sc.new_skill_count) opts.push(option('skills', 'Skills', `${c.allSkills ? 'All' : fmt(c.skillNames.size) + ' of'} ${plural(sc.new_skill_count, 'new skill')}${c.allSkills ? '' : ' chosen'}.${sc.skills_already_here ? ` ${fmt(sc.skills_already_here)} it already has are skipped.` : ''}`,
+  const hist = sc.history;
+  if (hist) out.push(h('div', { class: 'wz-card imp-banner imp-history' }, h('span', { class: 'wz-pill', text: 'History' }),
+    h('p', { text: 'Your earlier agent’s past comes in read-only, with its dates. Your Wizard’s own memory is newer and wins. Sign-ins, settings, personality and other profiles stay behind.' })));
+  if (n.chats || n.projects) opts.push(option('chats', hist ? 'Chats and memories' : `Chats${n.projects ? ' and projects' : ''}`,
+    hist ? `Saved as History your Wizard can search${hist.memories_as_of ? `, memories as of ${hist.memories_as_of}` : ''}.` : 'Saved as files your Wizard can search.'));
+  if (sc.new_skill_count) opts.push(option('skills', 'Skills', `${c.allSkills ? 'All' : fmt(c.skillNames.size) + ' of'} ${plural(sc.new_skill_count, 'new skill')}${c.allSkills ? '' : ' chosen'}${hist ? ', as documents to read, not active skills' : ''}.${sc.skills_already_here ? ` ${fmt(sc.skills_already_here)} it already has are skipped.` : ''}`,
     h('button', { class: 'wz-button secondary imp-small imp-pick', type: 'button', onclick: pickSkills, text: 'Choose' })));
   if (c.facts.length) opts.push(option('about', 'What I know about you', `${fmt(c.facts.filter(f => f.on).length)} of ${plural(c.facts.length, 'fact')} chosen. Review them below.`));
   if (n.facts) opts.push(option('store', 'Fact store', `${plural(n.facts, 'fact')} from its long-term memory`
-    + (sc.fact_store && sc.fact_store.here ? `, added to the ${fmt(sc.fact_store.here)} already here.` : '.')));
-  if (sc.personality && sc.personality.found) opts.push(option('personality', 'Personality', sc.personality.here === 'custom'
+    + (hist ? ', dated and ranked below what your Wizard learns itself.' : sc.fact_store && sc.fact_store.here ? `, added to the ${fmt(sc.fact_store.here)} already here.` : '.')));
+  if (sc.personality && sc.personality.found && !hist) opts.push(option('personality', 'Personality', sc.personality.here === 'custom'
     ? 'Replaces the current one. Undo brings it back.' : `Your ${sc.source} agent’s way of talking.`));
   out.push(opts.length ? h('ul', { class: 'wz-list imp-options' }, opts) : h('p', { class: 'imp-muted', text: 'This export has nothing the Importer can bring in yet.' }));
+  const jobs = hist ? hist.cron_jobs || [] : [];
+  if (jobs.length) out.push(h('div', { class: 'imp-card imp-jobs' }, h('h2', { text: 'Scheduled jobs' }),
+    h('p', { class: 'imp-muted', text: 'Only the ones you tick come in, paused. Turn them on in Schedules when you’re ready.' }),
+    h('ul', { class: 'wz-list' }, jobs.map(j => h('li', {}, h('button', { class: 'wz-row', type: 'button', 'data-job': j.id, disabled: !j.can_import || undefined,
+      'aria-pressed': String(c.schedules.has(j.id)), onclick: () => { if (c.schedules.has(j.id)) c.schedules.delete(j.id); else c.schedules.add(j.id); render(); } },
+      check(), h('span', { class: 'wz-main' }, h('b', { text: j.name }), h('small', { text: j.can_import ? [j.when, j.prompt].filter(Boolean).join(' · ') : `Stays behind: ${j.why_not}` }))))))));
   if (c.about) {
     const cards = c.facts.map((f, i) => {
       const box = h('textarea', { class: 'imp-fact-t', rows: '1', 'aria-label': `Fact ${i + 1}`, spellcheck: 'true' });
@@ -617,8 +635,10 @@ function doneView() {
   if (d.facts) lines.push(`${plural(d.facts.facts_added, 'fact')} in its fact store`);
   if (d.chats) lines.push(`${plural(d.chats.chats_written, 'chat')} it can look up, in Files › ${String(d.chats.folder).replace('/', ' › ')}`);
   if (d.about) lines.push(aboutLine(d.about));
-  if (d.skills) lines.push(`${plural(d.skills.installed.length, 'new skill')}${d.skills.installed.length ? ': ' + d.skills.installed.slice(0, 6).map(s => s.name).join(', ') + (d.skills.installed.length > 6 ? '…' : '') : ''}`);
+  if (d.skills && d.skills.documents !== undefined) lines.push(`${plural(d.skills.documents, 'old skill')} it can read (not active skills), in Files › ${String(d.skills.folder).split('/').join(' › ')}`);
+  else if (d.skills) lines.push(`${plural(d.skills.installed.length, 'new skill')}${d.skills.installed.length ? ': ' + d.skills.installed.slice(0, 6).map(s => s.name).join(', ') + (d.skills.installed.length > 6 ? '…' : '') : ''}`);
   if (d.personality) lines.push('its personality, from your next chat');
+  if (d.schedules) lines.push(`${plural(d.schedules.created, 'scheduled job')} in Schedules, paused`);
   const errors = Object.entries(r.errors || {});
   const who = S.dest ? (sc.into || destLabel(S.dest)) : 'Your Wizard';
   const head = errors.length
@@ -641,7 +661,7 @@ if (new URLSearchParams(location.search).get('embedded') === '1') document.docum
 for (const ev of ['dragover', 'drop']) document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files.length) { if (S.view !== 'guide') { S.source = S.source || 'other'; go('guide'); } addFiles(e.dataTransfer.files); } });
 $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
 if (WA) {
-  WA.ready({ name: 'importer', version: '0.1.7' });
+  WA.ready({ name: 'importer', version: '0.1.10' });
   WA.back.register({ canGoBack: () => S.view !== 'home', back });
 } else say('Wizard system functions are unavailable. Open the Importer through Wizard.', true);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.view === 'guide') poll(); });

@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent if '__file__' in globals() else Path(os.environ.get('APP_ROOT', '.')).resolve()
 APP_ID = 'importer'
-VERSION = '0.1.9'
+VERSION = '0.1.10'
 STATIC_TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
                 '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml'}
 HERMES_URL = (os.environ.get('WIZARD_IMPORTER_HERMES_URL', '') or 'http://hermes-agent:9119').rstrip('/')
@@ -240,7 +240,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/status':
                 return self.send(200, status())
             if path == '/api/sources':
-                return self.send(200, Agent.call('GET', '/sources', timeout=60))
+                # hermes-history: the screen offers Bring your Wizard (an earlier Hermes agent as History) only when on
+                return self.send(200, {**Agent.call('GET', '/sources', timeout=60), 'history': switch_on('hermes-history')})
             if path == '/api/progress':
                 scan_id = (parse_qs(urlsplit(self.path).query).get('scan_id') or [''])[0]
                 if not SCAN_ID.fullmatch(scan_id):
@@ -304,11 +305,12 @@ class Handler(BaseHTTPRequestHandler):
                 out = rpc(body)
                 return self.send(202 if out is None else 200, out)
             if path == '/api/scan':
-                return self.send(200, Agent.call('POST', '/scan', pick(body, ('path', 'paths', 'dest', 'scan_id'))))
+                keys = ('path', 'paths', 'dest', 'scan_id') + (('history',) if body.get('history') is True and switch_on('hermes-history') else ())
+                return self.send(200, Agent.call('POST', '/scan', pick(body, keys)))
             if path == '/api/cancel':
                 return self.send(200, Agent.call('POST', '/cancel', pick(body, ('scan_id',)), timeout=20))
             if path == '/api/import':
-                keys = ('import_id', 'chats', 'skills', 'personality', 'facts', 'about', 'dest')
+                keys = ('import_id', 'chats', 'skills', 'personality', 'facts', 'about', 'dest', 'schedules')
                 return self.send(200, Agent.call('POST', '/import', pick(body, keys)))
             if path == '/api/undo':
                 return self.send(200, Agent.call('POST', '/undo', pick(body, ('import_id', 'dest'))))
@@ -337,7 +339,13 @@ import threading as _sw_threading
 from pathlib import Path as _SwPath
 from urllib.parse import urlsplit as _sw_urlsplit
 
-SWITCHES = []
+SWITCHES = [
+    {'id': 'hermes-history', 'name': 'Bring your Wizard',
+     'description': 'Another Hermes agent comes in as read-only History: its chats, dated memories and facts, and its '
+                    'skills as documents to read. Only the scheduled jobs you tick come in, paused. Sign-ins, settings, '
+                    'personality and other profiles stay behind.',
+     'default': False, 'issues': ['humanitylabs-org/wizard-agent-service#544']},
+]
 _SW_CONTRACT = 'wizard.app-switches/1'
 _SW_ROUTE = _sw_re.compile(r'(?:/[a-z0-9][a-z0-9-]{0,62})?/api/switches/?')
 _SW_LOCAL = {'localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'}

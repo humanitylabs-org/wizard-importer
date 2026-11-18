@@ -76,8 +76,10 @@ class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.dash = serve(FakeDashboard)
+        import tempfile
+        cls.switch_dir = tempfile.mkdtemp(prefix='importer-switches-')
         os.environ.update(WIZARD_IMPORTER_HERMES_URL=f'http://127.0.0.1:{cls.dash.server_port}',
-                          HERMES_DASHBOARD_BASIC_AUTH_PASSWORD='p' * 20, PORT='18999')
+                          HERMES_DASHBOARD_BASIC_AUTH_PASSWORD='p' * 20, PORT='18999', WIZARD_SWITCHES_DIR=cls.switch_dir)
         spec = importlib.util.spec_from_file_location('importer_server', ROOT / 'app/server.py')
         cls.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.mod)
@@ -91,6 +93,10 @@ class ServerTests(unittest.TestCase):
 
     def setUp(self):
         FakeDashboard.calls.clear(); FakeDashboard.engine = True; self.mod.Agent.opener = None
+        (Path(self.switch_dir) / 'switches.json').unlink(missing_ok=True)
+
+    def history_on(self, on=True):
+        (Path(self.switch_dir) / 'switches.json').write_text(json.dumps({'hermes-history': on}))
 
     def req(self, method, path, body=None, data=None, headers=None):
         h = {'X-Wizard-Request': 'importer', **(headers or {})}
@@ -149,6 +155,22 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.req('GET', '/api/imports?dest=..%2Fx')[0], 400)
         self.req('POST', '/api/import', {'import_id': 'a', 'facts': True, 'dest': 'oscar-os', 'evil': 1})
         self.assertEqual(json.loads(FakeDashboard.calls[-1][3]), {'import_id': 'a', 'facts': True, 'dest': 'oscar-os'})
+
+    def test_hermes_history_switch_is_off_by_default_and_gates_the_scan_flag(self):
+        """Bring your Wizard (wizard-agent-service issue 544): the screen asks for history; only the switch lets it through."""
+        self.assertEqual([(x['id'], x['default'], x['issues']) for x in self.mod.SWITCHES],
+                         [('hermes-history', False, ['humanitylabs-org/wizard-agent-service#544'])])
+        self.assertIs(self.req('GET', '/api/sources')[1]['history'], False)
+        code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip', 'history': True})
+        self.assertEqual((code, body['echo']), (200, {'path': 'Inbox/h.zip'}))
+        self.history_on()
+        self.assertIs(self.req('GET', '/api/sources')[1]['history'], True)
+        code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip', 'history': True})
+        self.assertEqual(body['echo'], {'path': 'Inbox/h.zip', 'history': True})
+        code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip', 'history': 'yes'})
+        self.assertEqual(body['echo'], {'path': 'Inbox/h.zip'})
+        self.req('POST', '/api/import', {'import_id': 'a', 'chats': True, 'schedules': ['brief']})
+        self.assertEqual(json.loads(FakeDashboard.calls[-1][3]), {'import_id': 'a', 'chats': True, 'schedules': ['brief']})
 
     def test_engine_refusal_text_reaches_the_screen(self):
         code, body = self.req('POST', '/api/import', {'import_id': 'nope', 'chats': True})

@@ -138,6 +138,26 @@ console.log(JSON.stringify([
         rows = piece('function readyRows', 'function homeView')
         self.assertEqual(rows.count('estText('), 3)
 
+    def test_bring_your_wizard_only_for_another_hermes_agent_while_switched_on(self):
+        code = piece('function historyScan', '/* ---------------- render')
+        got = node("const G = { hermes: { name: 'Hermes' }, claude: { name: 'Claude' } };\n" + code + """
+const out = [];
+for (const [history, source, selfPath] of [[false, 'hermes', null], [true, 'hermes', null], [true, 'claude', null], [true, 'hermes', '/home/x/.hermes']]) {
+  globalThis.S = { status: { history }, selfPath };
+  out.push([historyScan(source), tileName('hermes'), tileName('claude')]);
+}
+console.log(JSON.stringify(out));""".replace('globalThis.S', 'S').replace('const out', 'let S; const out'))
+        self.assertEqual(got, [[False, 'Hermes', 'Claude'], [True, 'Another Hermes agent', 'Claude'],
+                               [False, 'Another Hermes agent', 'Claude'], [False, 'Another Hermes agent', 'Claude']])
+
+    def test_history_preview_hides_personality_and_ticks_no_job(self):
+        preview = piece('function previewView', 'function pickSkills')
+        self.assertIn("sc.personality.found && !hist", preview)
+        start = piece('async function startScan', '/* Progress while a scan reads')
+        self.assertIn("schedules: new Set()", start)
+        self.assertIn("personality: !scan.history", start)
+        run = piece('async function runImport', 'async function sendImport')
+        self.assertIn("schedules: sc.history && c.schedules.size ? [...c.schedules] : undefined", run)
 
 if __name__ == '__main__':
     unittest.main()
