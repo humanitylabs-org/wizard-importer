@@ -97,6 +97,24 @@ console.log(JSON.stringify([
         self.assertNotIn('memory is full', JS)
         self.assertIn('aboutLine(d.about)', piece('function doneView', '/* ---------------- boot'))
 
+    def test_facts_line_says_whether_the_agent_will_use_them(self):
+        """wizard-importer issue 14: 1,207 facts came in, fact memory stayed off, and nothing said so."""
+        code = FMT + piece('function factsLine', 'function doneView')
+        got = node(code + """
+console.log(JSON.stringify([
+  factsLine({facts_added: 1207, provider_on: true, fact_memory: {on: true, turned_on: true}}),
+  factsLine({facts_added: 2, provider_on: true, fact_memory: {on: true, turned_on: false}}),
+  factsLine({facts_added: 1207, provider_on: false, fact_memory: {on: false, turned_on: false,
+             why: 'This agent uses the honcho memory, not its fact store.'}}),
+  factsLine({facts_added: 1207, provider_on: false}),
+  factsLine({facts_added: 3, provider_on: true})]));""")
+        self.assertEqual(got[0], '1,207 facts in its fact store. Fact memory is now on, so it can recall them')
+        self.assertEqual(got[1], '2 facts in its fact store')
+        self.assertEqual(got[2], '1,207 facts in its fact store, not used yet: This agent uses the honcho memory, not its fact store')
+        self.assertEqual(got[3], '1,207 facts in its fact store, not used yet: Fact memory is off for this agent')
+        self.assertEqual(got[4], '3 facts in its fact store')
+        self.assertIn('factsLine(d.facts)', piece('function doneView', '/* ---------------- boot'))
+
     def test_reading_screen_shows_progress_time_left_heartbeat_and_slow_note(self):
         code = FMT + piece('const STEP_TEXT', 'function paintScan')
         got = node(code + """
