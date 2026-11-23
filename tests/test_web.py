@@ -60,6 +60,31 @@ console.log(JSON.stringify([
         retry = piece('function retryFailed', 'function pickDest')
         self.assertIn("failed.includes('chats')", retry)
 
+    def test_an_import_that_did_not_finish_is_marked_with_why_and_never_counts_as_brought_in(self):
+        # Issue 15: a killed import sat in the list like the ones that worked. The engine now says state + error.
+        code = FMT + piece('/* An import that already came', 'function readyRows') + piece('function plainError', 'const PART_NAME') \
+            + piece('function pastLine', 'function pastSheet')
+        why = 'It stopped part way: your agent restarted before it finished, often because it ran out of memory.'
+        got = node("const S = {imports: [{source: '/m/Inbox/a.zip', imported_at: 5, archived_chats: 2, state: 'imported'},"
+                   " {source: '/m/Inbox/b.zip', scanned_at: 9, chats: 8802, archived_chats: 3, state: 'failed', error: '%s'},"
+                   " {source: '/m/Inbox/c.zip', scanned_at: 9, state: 'failed', error: 'x'},"
+                   " {source: '/m/Inbox/d.zip', scanned_at: 9, state: 'scanned'},"
+                   " {source: '/m/Inbox/e.zip', imported_at: 7}, {source: '/m/Inbox/f.zip', scanned_at: 7}]};\n" % why + code + """
+const [a, b, c, d, e, f] = S.imports;
+console.log(JSON.stringify([!!broughtIn('Inbox/a.zip'), !!broughtIn('Inbox/b.zip'), !!broughtIn('Inbox/d.zip'),
+  importState(e), importState(f), didntFinish(b), pastLine(b), pastLine(c), leftSomething(b), leftSomething(c)]));""")
+        self.assertEqual(got[:6], [True, False, False, 'imported', 'scanned', True])
+        self.assertTrue(got[6].startswith('3 of 8,802 chats came in'), got[6])
+        self.assertTrue(got[7].startswith('Nothing came in'), got[7])
+        self.assertEqual(got[8:], [True, False])
+        home = piece('function homeView', 'function pastLine')
+        self.assertIn('didn’t finish', home)
+        self.assertIn('filter(didntFinish)', home)
+        sheet = piece('function pastSheet', 'function dropZone')
+        self.assertIn('Didn’t finish', sheet)
+        self.assertIn('plainError(i.error)', sheet)
+        self.assertIn("'Remove' : 'Undo'", sheet)
+
     def test_back_from_the_guide_cancels_the_wait_and_home_can_cancel_it(self):
         back = piece('function back()', 'function finish()')
         self.assertIn("if (S.view === 'guide') { S.waiting = null; saveWaiting();", back)
