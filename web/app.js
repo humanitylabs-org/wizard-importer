@@ -629,10 +629,17 @@ function aboutLine(a) {
   if (a.waiting_for_approval) parts.push(`${fmt(a.waiting_for_approval)} waiting for your approval`);
   return parts.join(', ');
 }
+/* The fact store line says whether the agent will use them: imported facts in a store it never recalls from are no use. */
+function factsLine(f) {
+  const line = `${plural(f.facts_added, 'fact')} in its fact store`;
+  const m = f.fact_memory || (f.provider_on === false ? { on: false } : { on: true });
+  if (m.on) return m.turned_on ? `${line}. Fact memory is now on, so it can recall them` : line;
+  return `${line}, not used yet: ${String(m.why || 'Fact memory is off for this agent.').replace(/\.$/, '')}`;
+}
 function doneView() {
   const r = S.result, d = r.done || {}, sc = S.scan || {};
   const lines = [];
-  if (d.facts) lines.push(`${plural(d.facts.facts_added, 'fact')} in its fact store`);
+  if (d.facts) lines.push(factsLine(d.facts));
   if (d.chats) lines.push(`${plural(d.chats.chats_written, 'chat')} it can look up, in Files › ${String(d.chats.folder).replace('/', ' › ')}`);
   if (d.about) lines.push(aboutLine(d.about));
   if (d.skills && d.skills.documents !== undefined) lines.push(`${plural(d.skills.documents, 'old skill')} it can read (not active skills), in Files › ${String(d.skills.folder).split('/').join(' › ')}`);
