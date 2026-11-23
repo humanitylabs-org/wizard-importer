@@ -140,3 +140,6 @@ html[data-color-scheme="dark"] .imp-mark.mono img { filter: invert(1); }
 #scan-left:empty { display: none; }
 .imp-scan-beat { text-align: center; font-variant-numeric: tabular-nums; }
 .imp-scan-slow { margin: 6px 0 0; text-align: center; color: var(--ink-2); font-size: var(--wz-text-sm); }
+/* An import that stopped part way (issue 15): marked, with how much came in and why. */
+.imp-pill { align-self: flex-start; margin: 2px 0; }
+.imp-why { color: var(--ink-2); }

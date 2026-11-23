@@ -133,7 +133,8 @@ TOOLS = [
      '(Claude Code, other Hermes homes) and export zips waiting in Files Inbox/Downloads. Read-only.',
      'inputSchema': {'type': 'object', 'properties': {}}},
     {'name': 'importer_imports', 'description': 'Earlier imports made with the Importer or wizard_bring_data, '
-     'with what each brought in. Read-only; undo happens on the Importer screen.',
+     'with what each brought in and its state (imported, partly, failed with the reason in error, importing, or '
+     'scanned = only looked at, never brought in). Read-only; undo happens on the Importer screen.',
      'inputSchema': {'type': 'object', 'properties': {}}},
 ]
 

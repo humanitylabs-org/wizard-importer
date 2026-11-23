@@ -396,6 +396,13 @@ function openSheet(build) {
 function closeSheet() { const d = $('sheet'); if (d.open) window.WzSheet.close(d); }
 $('sheet').addEventListener('close', () => { if (sheetBack) { sheetBack.release(); sheetBack = null; } if (S.view === 'preview') render(); });
 function confirmUndo(entry) {
+  if (didntFinish(entry) && !leftSomething(entry)) return openSheet(() => [
+    h('h2', { id: 'sheet-h', text: 'Remove this import from the list?' }),
+    h('p', { class: 'imp-muted', text: 'It didn’t finish and nothing of it came in, so nothing else changes.' }),
+    h('div', { class: 'wz-actions' },
+      h('button', { class: 'wz-button destructive', type: 'button', onclick: () => undo(entry), text: 'Remove' }),
+      h('button', { class: 'wz-button secondary', type: 'button', onclick: closeSheet, text: 'Keep it' })),
+  ]);
   openSheet(() => [
     h('h2', { id: 'sheet-h', text: `Undo the ${entry.label || 'last'} import?` }),
     h('p', { class: 'imp-muted', text: 'Removes the chats, skills, memories and personality this import added. Anything you changed since stays as you left it.' }),
@@ -434,9 +441,15 @@ function banner() {
   if (st.read_only) return h('div', { class: 'wz-card imp-banner' }, h('span', { class: 'wz-pill', text: 'Preview' }), h('p', { text: 'Preview mode: you can see what would come in, but nothing is saved.' }));
   return null;
 }
-/* An import that already came from this source (newest), so its row reads "Brought in" and sits last. */
+/* An import that already came from this source (newest), so its row reads "Brought in" and sits last. A failed one
+ * never counts. State: imported | partly | failed | importing | scanned (only looked at); an older engine sends none. */
+function importState(i) {
+  return i.state || ((i.imported_at || i.archived_at) ? 'imported' : 'scanned');
+}
+const cameIn = i => ['imported', 'partly'].includes(importState(i));
+const didntFinish = i => importState(i) === 'failed';
 function broughtIn(path, self) {
-  const hits = S.imports.filter(i => (i.archived_at || i.imported_at) && typeof i.source === 'string'
+  const hits = S.imports.filter(i => cameIn(i) && typeof i.source === 'string'
     && (i.source === path || i.source.endsWith('/' + path)) && (!self || i.dest));
   return hits.sort((a, b) => (b.imported_at || b.archived_at) - (a.imported_at || a.archived_at))[0] || null;
 }
@@ -476,17 +489,29 @@ function homeView() {
   out.push(h('div', { class: 'imp-list' }, ...rows, ...tiles));
   out.push(h('button', { class: 'imp-link', type: 'button', 'data-source': 'other', onclick: () => openGuide('other'), text: 'Something else' }));
   out.push(h('p', { class: 'imp-fine', text: 'Nothing is saved until you approve it.' }));
-  const past = S.imports.filter(i => i.archived_at || i.imported_at);
-  if (past.length) out.push(h('button', { class: 'imp-link imp-past', type: 'button', onclick: pastSheet, text: `Already brought in (${past.length})` }));
+  const ok = S.imports.filter(cameIn).length, bad = S.imports.filter(didntFinish).length;
+  if (ok || bad) out.push(h('button', { class: 'imp-link imp-past', type: 'button', onclick: pastSheet, 'data-failed': bad || undefined,
+    text: ok && bad ? `Already brought in (${ok}) · ${fmt(bad)} didn’t finish` : ok ? `Already brought in (${ok})` : `${plural(bad, 'import')} didn’t finish` }));
   return out;
 }
+/* What a past import's row says under its name; a failed one says it didn't finish, how much came in, and why. */
+function pastLine(i) {
+  const when = i.imported_at || i.archived_at || i.scanned_at;
+  const got = [i.archived_chats ? (didntFinish(i) && i.chats ? `${fmt(i.archived_chats)} of ${plural(i.chats, 'chat')}` : plural(i.archived_chats, 'chat')) : '',
+    i.skills_installed ? plural(i.skills_installed, 'skill') : '', i.memories_added ? plural(i.memories_added, 'memory', 'memories') : ''].filter(Boolean);
+  if (didntFinish(i)) return [got.length ? got.join(', ') + ' came in' : 'Nothing came in', when ? new Date(1000 * when).toLocaleDateString() : ''].filter(Boolean).join(' · ');
+  return [...got, when ? new Date(1000 * when).toLocaleDateString() : ''].filter(Boolean).join(' · ');
+}
+const leftSomething = i => !!(i.archived_chats || i.skills_installed || i.memories_added || i.facts_added || i.personality || i.schedules_created || i.about);
 function pastSheet() {
-  const past = S.imports.filter(i => i.archived_at || i.imported_at);
-  openSheet(() => [h('h2', { id: 'sheet-h', text: 'Brought in' }), h('ul', { class: 'wz-list' }, past.map(i => h('li', {}, h('div', { class: 'wz-row' },
+  const past = S.imports.filter(i => cameIn(i) || didntFinish(i));
+  openSheet(() => [h('h2', { id: 'sheet-h', text: 'Brought in' }), h('ul', { class: 'wz-list' }, past.map(i => h('li', { 'data-state': importState(i) }, h('div', { class: 'wz-row' },
     mark(G[i.kind] || G.other), h('span', { class: 'wz-main' }, h('b', { text: (i.label || KIND_NAME[i.kind] || 'Import') + (i.into ? ` → ${i.into}` : '') }),
-      h('small', { text: [i.archived_chats ? plural(i.archived_chats, 'chat') : '', i.skills_installed ? plural(i.skills_installed, 'skill') : '',
-        i.memories_added ? plural(i.memories_added, 'memory', 'memories') : '', new Date(1000 * (i.imported_at || i.archived_at)).toLocaleDateString()].filter(Boolean).join(' · ') })),
-    h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: () => { closeSheet(); confirmUndo(i); }, text: 'Undo' })))))]);
+      didntFinish(i) ? h('span', { class: 'wz-pill warn imp-pill', text: 'Didn’t finish' }) : null,
+      h('small', { text: pastLine(i) }),
+      (didntFinish(i) || importState(i) === 'partly') && i.error ? h('small', { class: 'imp-why', text: plainError(i.error) }) : null),
+    h('button', { class: 'wz-button secondary imp-small', type: 'button', onclick: () => { closeSheet(); confirmUndo(i); },
+      text: didntFinish(i) && !leftSomething(i) ? 'Remove' : 'Undo' })))))]);
 }
 function dropZone() {
   // The whole screen accepts a dropped file; this is the tap way in.
