@@ -9,8 +9,6 @@ Bring your memories, chats, skills and personality from ChatGPT, Claude, Claude 
 
 The app parses and stores nothing itself: it relays to the `wizard-os` Hermes plugin's bring-data engine (`/api/plugins/wizard-os/bring-data/*`, humanitylabs-org/wizard-agent-service). Tests: `python3 tests/test_server.py`.
 
-## Switches (Try it)
+## Bring your Wizard (another Hermes agent)
 
-| Switch | Off (default) | On |
-| --- | --- | --- |
-| `hermes-history` (Bring your Wizard, humanitylabs-org/wizard-agent-service#544) | A Hermes source imports as before | "Another Hermes agent": its chats, dated memories and facts come in as read-only History, skills as documents to read (never active skills), and only the scheduled jobs you tick, paused. Sign-ins, settings, personality and other profiles stay behind. Needs the Agent Service with the history engine. |
+Another Hermes agent (a `hermes backup` zip or another Hermes home on this box) comes in as read-only History: its chats, dated memories and facts, skills as documents to read (never active skills), and only the scheduled jobs you tick, paused. Sign-ins, settings, personality and other profiles stay behind. On for everyone since humanitylabs-org/wizard-agent-service#544 was approved; the app serves `wizard.app-switches/1` with no switches.

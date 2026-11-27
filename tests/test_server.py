@@ -95,9 +95,6 @@ class ServerTests(unittest.TestCase):
         FakeDashboard.calls.clear(); FakeDashboard.engine = True; self.mod.Agent.opener = None
         (Path(self.switch_dir) / 'switches.json').unlink(missing_ok=True)
 
-    def history_on(self, on=True):
-        (Path(self.switch_dir) / 'switches.json').write_text(json.dumps({'hermes-history': on}))
-
     def req(self, method, path, body=None, data=None, headers=None):
         h = {'X-Wizard-Request': 'importer', **(headers or {})}
         if body is not None:
@@ -156,21 +153,27 @@ class ServerTests(unittest.TestCase):
         self.req('POST', '/api/import', {'import_id': 'a', 'facts': True, 'dest': 'oscar-os', 'evil': 1})
         self.assertEqual(json.loads(FakeDashboard.calls[-1][3]), {'import_id': 'a', 'facts': True, 'dest': 'oscar-os'})
 
-    def test_hermes_history_switch_is_off_by_default_and_gates_the_scan_flag(self):
-        """Bring your Wizard (wizard-agent-service issue 544): the screen asks for history; only the switch lets it through."""
-        self.assertEqual([(x['id'], x['default'], x['issues']) for x in self.mod.SWITCHES],
-                         [('hermes-history', False, ['humanitylabs-org/wizard-agent-service#544'])])
-        self.assertIs(self.req('GET', '/api/sources')[1]['history'], False)
-        code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip', 'history': True})
+    def test_bring_your_wizard_is_on_for_everyone(self):
+        """Bring your Wizard (wizard-agent-service issue 544, approved): no switch; the history flag always goes through."""
+        self.assertEqual(self.mod.SWITCHES, [])
+        self.assertNotIn('history', self.req('GET', '/api/sources')[1])
+        code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip'})
         self.assertEqual((code, body['echo']), (200, {'path': 'Inbox/h.zip'}))
-        self.history_on()
-        self.assertIs(self.req('GET', '/api/sources')[1]['history'], True)
         code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip', 'history': True})
-        self.assertEqual(body['echo'], {'path': 'Inbox/h.zip', 'history': True})
+        self.assertEqual((code, body['echo']), (200, {'path': 'Inbox/h.zip', 'history': True}))
         code, body = self.req('POST', '/api/scan', {'path': 'Inbox/h.zip', 'history': 'yes'})
         self.assertEqual(body['echo'], {'path': 'Inbox/h.zip'})
         self.req('POST', '/api/import', {'import_id': 'a', 'chats': True, 'schedules': ['brief']})
         self.assertEqual(json.loads(FakeDashboard.calls[-1][3]), {'import_id': 'a', 'chats': True, 'schedules': ['brief']})
+
+    def test_a_stored_value_of_the_removed_switch_is_cleared(self):
+        f = Path(self.switch_dir) / 'switches.json'
+        f.write_text(json.dumps({'hermes-history': False, 'other': True}))
+        self.mod.forget_retired_switches()
+        self.assertEqual(json.loads(f.read_text()), {'other': True})
+        f.unlink()
+        self.mod.forget_retired_switches()  # nothing stored: nothing written
+        self.assertFalse(f.exists())
 
     def test_engine_refusal_text_reaches_the_screen(self):
         code, body = self.req('POST', '/api/import', {'import_id': 'nope', 'chats': True})
