@@ -132,7 +132,7 @@ async function refresh() {
     const elsewhere = await Promise.all((sources.into || []).map(d => api('api/imports?dest=' + encodeURIComponent(d.id))
       .then(r => (r.imports || []).map(i => ({ ...i, dest: d.id, into: d.label }))).catch(() => [])));
     S.sources = sources; S.imports = [...(imports.imports || []), ...elsewhere.flat()];
-    S.status = { connected: true, read_only: !!sources.read_only, history: sources.history === true };
+    S.status = { connected: true, read_only: !!sources.read_only };
   } catch (e) {
     S.status = { connected: false, message: e.message, reason: e.reason };
   }
@@ -412,10 +412,10 @@ function confirmUndo(entry) {
   ]);
 }
 
-/* Bring your Wizard (switch hermes-history): another Hermes agent comes in as read-only History. Never the
+/* Bring your Wizard (wizard-agent-service issue 544): another Hermes agent comes in as read-only History. Never the
  * "Move this agent into Wizard OS" flow, which moves the agent itself. */
-function historyScan(source) { return !!(S.status && S.status.history) && source === 'hermes' && !S.selfPath; }
-function tileName(id) { return id === 'hermes' && S.status && S.status.history ? 'Another Hermes agent' : G[id].name; }
+function historyScan(source) { return source === 'hermes' && !S.selfPath; }
+function tileName(id) { return id === 'hermes' ? 'Another Hermes agent' : G[id].name; }
 
 /* ---------------- render ---------------- */
 function render() {

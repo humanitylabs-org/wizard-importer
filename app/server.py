@@ -241,8 +241,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/status':
                 return self.send(200, status())
             if path == '/api/sources':
-                # hermes-history: the screen offers Bring your Wizard (an earlier Hermes agent as History) only when on
-                return self.send(200, {**Agent.call('GET', '/sources', timeout=60), 'history': switch_on('hermes-history')})
+                return self.send(200, Agent.call('GET', '/sources', timeout=60))
             if path == '/api/progress':
                 scan_id = (parse_qs(urlsplit(self.path).query).get('scan_id') or [''])[0]
                 if not SCAN_ID.fullmatch(scan_id):
@@ -306,7 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                 out = rpc(body)
                 return self.send(202 if out is None else 200, out)
             if path == '/api/scan':
-                keys = ('path', 'paths', 'dest', 'scan_id') + (('history',) if body.get('history') is True and switch_on('hermes-history') else ())
+                # Bring your Wizard (wizard-agent-service issue 544): another Hermes agent comes in as read-only History
+                keys = ('path', 'paths', 'dest', 'scan_id') + (('history',) if body.get('history') is True else ())
                 return self.send(200, Agent.call('POST', '/scan', pick(body, keys)))
             if path == '/api/cancel':
                 return self.send(200, Agent.call('POST', '/cancel', pick(body, ('scan_id',)), timeout=20))
@@ -340,13 +340,9 @@ import threading as _sw_threading
 from pathlib import Path as _SwPath
 from urllib.parse import urlsplit as _sw_urlsplit
 
-SWITCHES = [
-    {'id': 'hermes-history', 'name': 'Bring your Wizard',
-     'description': 'Another Hermes agent comes in as read-only History: its chats, dated memories and facts, and its '
-                    'skills as documents to read. Only the scheduled jobs you tick come in, paused. Sign-ins, settings, '
-                    'personality and other profiles stay behind.',
-     'default': False, 'issues': ['humanitylabs-org/wizard-agent-service#544']},
-]
+SWITCHES = []
+# Switches that were approved and removed (now always on): their stored value is cleared at startup.
+RETIRED_SWITCHES = ('hermes-history',)  # Bring your Wizard, humanitylabs-org/wizard-agent-service#544
 _SW_CONTRACT = 'wizard.app-switches/1'
 _SW_ROUTE = _sw_re.compile(r'(?:/[a-z0-9][a-z0-9-]{0,62})?/api/switches/?')
 _SW_LOCAL = {'localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'}
@@ -386,6 +382,18 @@ def _sw_set(switch_id, on):
         tmp.write_text(_sw_json.dumps(saved))
         _sw_os.replace(tmp, f)
     return switches_doc()
+
+
+def forget_retired_switches():
+    """Drop the stored value of every retired switch from switches.json (a removed switch never comes back)."""
+    with _sw_lock:
+        saved = _sw_saved()
+        if not any(k in saved for k in RETIRED_SWITCHES):
+            return
+        f = _sw_file()
+        tmp = f.with_name(f.name + '.tmp')
+        tmp.write_text(_sw_json.dumps({k: v for k, v in saved.items() if k not in RETIRED_SWITCHES}))
+        _sw_os.replace(tmp, f)
 
 
 def _sw_owner(h, write):
@@ -478,4 +486,8 @@ wizard_switches_install(Handler)
 
 
 if __name__ == '__main__':
+    try:
+        forget_retired_switches()
+    except OSError:
+        pass
     ThreadingHTTPServer((os.environ.get('BIND', '0.0.0.0'), int(os.environ.get('PORT', '8799'))), Handler).serve_forever()
